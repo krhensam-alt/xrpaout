@@ -1,0 +1,29 @@
+name: Deploy to K8s
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build Backend Image
+      run: |
+        docker build -t xrpaout-backend:latest ./backend
+
+    - name: Build Frontend Image
+      run: |
+        # SERVER_IP는 GitHub Repository Secrets에 등록해야 합니다.
+        # 또는 환경에 따라 고정 IP를 직접 입력할 수도 있습니다.
+        docker build --build-arg VITE_API_URL=http://localhost:13151 -t xrpaout-frontend:latest ./frontend
+
+    - name: Apply K8s Manifests
+      run: |
+        kubectl apply -f k8s/xrpaout-k8s.yaml
+        # 이미지 갱신을 위해 재시작
+        kubectl rollout restart deployment/xrpaout-deployment
