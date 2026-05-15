@@ -1,0 +1,176 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  /* HSL Color Palette tailored for Premium Crypto Trading UI */
+  --bg-base: 222 47% 5%;
+  --bg-surface: 222 40% 10%;
+  --bg-glass: hsla(222, 40%, 15%, 0.65);
+  --bg-glass-hover: hsla(222, 40%, 20%, 0.8);
+  
+  --border-glass: hsla(222, 50%, 30%, 0.4);
+  --border-glow: hsla(200, 100%, 50%, 0.2);
+  
+  --text-main: 210 100% 95%;
+  --text-muted: 215 30% 65%;
+  --text-subtle: 215 20% 45%;
+
+  /* Status Colors */
+  --color-buy: 150 80% 40%;
+  --color-buy-glow: hsla(150, 80%, 40%, 0.25);
+  --color-sell: 350 85% 60%;
+  --color-sell-glow: hsla(350, 85%, 60%, 0.25);
+  --color-hold: 200 95% 55%;
+  --color-hold-glow: hsla(200, 95%, 55%, 0.25);
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-full: 9999px;
+  
+  --transition-smooth: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: hsl(var(--bg-base));
+  color: hsl(var(--text-main));
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Stunning Ambient Background Glows */
+body::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(circle, hsla(200, 100%, 40%, 0.15) 0%, transparent 70%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+body::after {
+  content: '';
+  position: absolute;
+  bottom: 10%;
+  right: -100px;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, hsla(260, 90%, 50%, 0.1) 0%, transparent 70%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  transition: var(--transition-smooth);
+}
+
+.glass-panel:hover {
+  border-color: var(--border-glow);
+  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+}
+
+.glass-button {
+  background: hsla(222, 50%, 25%, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-glass);
+  color: hsl(var(--text-main));
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.glass-button:hover {
+  background: hsla(222, 60%, 35%, 0.7);
+  border-color: hsl(var(--text-main));
+  transform: translateY(-1px);
+}
+
+.glass-button:active {
+  transform: translateY(1px);
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-buy {
+  background: var(--color-buy-glow);
+  color: hsl(var(--color-buy));
+  border: 1px solid hsla(var(--color-buy), 0.4);
+}
+
+.badge-sell {
+  background: var(--color-sell-glow);
+  color: hsl(var(--color-sell));
+  border: 1px solid hsla(var(--color-sell), 0.4);
+}
+
+.badge-hold {
+  background: var(--color-hold-glow);
+  color: hsl(var(--color-hold));
+  border: 1px solid hsla(var(--color-hold), 0.4);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0% { opacity: 0.4; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.4; transform: scale(0.98); }
+}
+
+.animate-pulse {
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+/* Custom Scrollbar for Sleek Mobile Layouts */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsla(222, 30%, 30%, 0.5);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsla(222, 30%, 45%, 0.8);
+}

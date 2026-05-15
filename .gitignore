@@ -1,0 +1,11 @@
+.env
+venv/
+__pycache__/
+*.db
+*.log
+.vscode/
+node_modules/
+dist/
+.firebase/
+dashboard_qr.png
+firebase_qr.png

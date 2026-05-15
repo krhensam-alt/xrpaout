@@ -1,0 +1,87 @@
+/* Premium Mobile App Viewport Layout */
+.app-container {
+  max-width: 480px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  /* Sleek subtle drop shadow for desktop viewers */
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+  background: linear-gradient(180deg, hsla(222, 47%, 7%, 0.4) 0%, hsla(222, 47%, 3%, 0.8) 100%);
+  backdrop-filter: blur(8px);
+}
+
+/* Flex & Layout Utility Helpers */
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 12px;
+  color: hsl(var(--text-main));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title i {
+  color: hsl(var(--color-hold));
+}
+
+/* Trigger cycle demo button container */
+.demo-trigger-wrapper {
+  margin-top: auto;
+  padding-top: 10px;
+  text-align: center;
+}
+
+.trigger-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 14px;
+  font-size: 1rem;
+  background: linear-gradient(135deg, hsla(200, 95%, 40%, 0.3) 0%, hsla(260, 90%, 40%, 0.3) 100%);
+  border-color: hsla(200, 100%, 60%, 0.4);
+}
+
+.trigger-btn:hover {
+  background: linear-gradient(135deg, hsla(200, 95%, 50%, 0.5) 0%, hsla(260, 90%, 50%, 0.5) 100%);
+  border-color: hsla(200, 100%, 70%, 0.8);
+  box-shadow: 0 0 20px hsla(200, 100%, 50%, 0.3);
+}
+
+/* Live Toast Notifications */
+.live-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 12px 20px;
+  border-radius: var(--radius-full);
+  background: hsla(222, 50%, 15%, 0.95);
+  border: 1px solid var(--border-glow);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from { transform: translate(-50%, 20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}

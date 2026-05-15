@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pyupbit
+requests
+python-dotenv
+pandas
+aiohttp
+python-binance

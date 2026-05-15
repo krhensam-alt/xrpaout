@@ -1,0 +1,7 @@
+firebase-functions
+firebase-admin
+requests
+pandas
+numpy
+pyupbit
+python-dotenv
