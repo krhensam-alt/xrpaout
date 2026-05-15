@@ -64,7 +64,7 @@ spec:
         image: xrpaout-frontend:v3
         imagePullPolicy: Never
         ports:
-        - containerPort: 13152
+        - containerPort: 80
       volumes:
       - name: db-volume
         persistentVolumeClaim:
@@ -85,5 +85,5 @@ spec:
       nodePort: 13151
     - name: web
       port: 13152
-      targetPort: 13152
+      targetPort: 80
       nodePort: 13152
