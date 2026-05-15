@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: xrpaout-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xrpaout-config
+data:
+  LM_STUDIO_BASE_URL: "http://192.168.0.79:1234/v1"
+  SELECTED_EXCHANGE: "UPBIT"
+  TRADING_INTERVAL_MINUTES: "60"
+  MAX_INVESTMENT_KRW: "100000"
+  MOCK_MODE: "False"
+  DATABASE_PATH: "/app/data/trading_log.db"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: xrpaout-secret
+type: Opaque
+data:
+  UPBIT_ACCESS_KEY: "VW0yWjROcE5pbldteGdWZXpHcjlyVjlXUFg3b3l1T2wwbUx4UENZaw=="
+  UPBIT_SECRET_KEY: "R1NBQlFac1pEb2doUnNFaU9QTVYzNTlLZnhiWXhVV2R4N3hNTjNjMg=="
+  TELEGRAM_BOT_TOKEN: "ODgxNjQzMjkxMjpBQUc2eHZfaWVRYkZIYVBXVnZ5OE1id25mQzNjaG5YMjR2bw=="
+  TELEGRAM_CHAT_ID: "Njc3OTU3MjA4OA=="
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xrpaout-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xrpaout
+  template:
+    metadata:
+      labels:
+        app: xrpaout
+    spec:
+      containers:
+      - name: backend
+        image: xrpaout-backend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 13151
+        envFrom:
+        - configMapRef:
+            name: xrpaout-config
+        - secretRef:
+            name: xrpaout-secret
+        volumeMounts:
+        - name: db-volume
+          mountPath: /app/data
+      - name: frontend
+        image: xrpaout-frontend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 13152
+      volumes:
+      - name: db-volume
+        persistentVolumeClaim:
+          claimName: xrpaout-db-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: xrpaout-service
+spec:
+  type: NodePort
+  selector:
+    app: xrpaout
+  ports:
+    - name: api
+      port: 13151
+      targetPort: 13151
+      nodePort: 13151
+    - name: web
+      port: 13152
+      targetPort: 13152
+      nodePort: 13152
