@@ -48,7 +48,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: xrpaout-backend:v2
+        image: xrpaout-backend:v3
         imagePullPolicy: Never
         ports:
         - containerPort: 13151
@@ -61,7 +61,7 @@ spec:
         - name: db-volume
           mountPath: /app/data
       - name: frontend
-        image: xrpaout-frontend:v2
+        image: xrpaout-frontend:v3
         imagePullPolicy: Never
         ports:
         - containerPort: 13152
