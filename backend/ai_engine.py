@@ -1,8 +1,8 @@
 import requests
 import json
 import re
-from .config import config
-from .exchange import PRICE_UNIT, CURRENCY_UNIT
+from config import config
+from exchange import PRICE_UNIT, CURRENCY_UNIT
 
 def query_ai_decision(indicators: dict, balances: dict, experiences: dict = None) -> dict:
     """LM Studio REST API를 통해 의사결정 질의 및 과거 경험 기반 학습(RAG) 적용"""
@@ -106,6 +106,9 @@ Assets:
 - Value: {total_val:,.0f} KRW (Profit: {profit_rate:+.2f}%)
 - Cash: {main_cash:,.2f} {PRICE_UNIT} / XRP: {xrp:.2f}
 
+## Budget Constraint
+- If available Cash is less than {5000 if config.SELECTED_EXCHANGE == "UPBIT" else 10}, you CANNOT 'BUY'. In this case, choose 'HOLD' or 'SELL'.
+
 Return the JSON decision."""
 
     payload = {
@@ -182,7 +185,7 @@ Return the JSON decision."""
     except Exception as e:
         print(f"LM Studio AI 질의 또는 파싱 최종 실패 (내부 룰 사용): {e}")
         # 오류 발생 시 텔레그램으로 즉시 알림 (중요 오류)
-        from .telegram_notifier import send_telegram_message
+        from telegram_notifier import send_telegram_message
         send_telegram_message(f"⚠️ *AI 분석 파싱 오류 발생*\n사유: `{str(e)}`\n현재 구간은 내부 룰 기반 폴백 모드로 진행합니다.")
 
     # ── 공격적 내부 룰 기반 폴백 AI ──────────────────────────

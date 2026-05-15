@@ -2,12 +2,12 @@ import asyncio
 import time
 import traceback
 from datetime import datetime
-from .config import config
-from .exchange import exchange_client, CURRENCY_UNIT, PRICE_UNIT, MIN_ORDER_VALUE
-from .indicators import get_all_indicators
-from .ai_engine import query_ai_decision
-from .database import save_ai_report, save_trade_log, get_ai_experiences, update_ai_report_outcome, get_db_connection
-from .telegram_notifier import send_telegram_message
+from config import config
+from exchange import exchange_client, CURRENCY_UNIT, PRICE_UNIT, MIN_ORDER_VALUE
+from indicators import get_all_indicators
+from ai_engine import query_ai_decision
+from database import save_ai_report, save_trade_log, get_ai_experiences, update_ai_report_outcome, get_db_connection
+from telegram_notifier import send_telegram_message
 import sqlite3
 
 # 브로드캐스팅용 콜백 함수 목록 관리
@@ -143,6 +143,14 @@ async def execute_trading_cycle(is_forced: bool = False):
         percentage = ai_res.get("percentage", 0.0)
         reason = ai_res.get("reason", "")
         
+        # 🚨 잔고 부족 시 매수 방지 로직 추가
+        main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
+        if decision == "BUY" and main_cash < MIN_ORDER_VALUE:
+            print(f"⚠️ 잔고 부족({main_cash:,.0f} {PRICE_UNIT})으로 인해 매수 결정을 HOLD로 전환합니다.")
+            decision = "HOLD"
+            reason = f"[잔고 부족으로 매수 취소] {reason}"
+            percentage = 0.0
+
         # 거시 지표 기반 필터링 보완: 비트코인 단기 급락 추세 시 매수 보류
         btc_price = balances.get("btc_price", 0.0)
         if decision == "BUY" and btc_price > 0 and indicators.get("rsi_14", 50) > 40:

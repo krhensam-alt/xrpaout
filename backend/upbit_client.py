@@ -2,7 +2,7 @@ import pyupbit
 import pandas as pd
 import numpy as np
 import datetime
-from .config import config
+from config import config
 
 class UpbitClient:
     def __init__(self):

@@ -1,7 +1,7 @@
 import asyncio
 import aiohttp
 import threading
-from .config import config
+from config import config
 
 # 전역 세션 관리 (성능 및 연결 재사용)
 _session = None

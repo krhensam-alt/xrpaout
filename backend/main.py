@@ -13,11 +13,11 @@ import mimetypes
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('text/css', '.css')
 
-from .config import config
-from .database import init_db, get_recent_ai_reports, get_recent_trade_logs
-from .exchange import exchange_client
-from .scheduler import start_scheduler, execute_trading_cycle, register_callback
-from .telegram_notifier import send_telegram_message, poll_telegram_updates
+from config import config
+from database import init_db, get_recent_ai_reports, get_recent_trade_logs
+from exchange import exchange_client
+from scheduler import start_scheduler, execute_trading_cycle, register_callback
+from telegram_notifier import send_telegram_message, poll_telegram_updates
 
 # 접속된 웹소켓 클라이언트 세션 목록
 websocket_clients = set()

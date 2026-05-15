@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import datetime
 from binance.client import Client
-from .config import config
+from config import config
 
 class BinanceClient:
     def __init__(self):
