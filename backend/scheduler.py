@@ -108,7 +108,7 @@ async def execute_trading_cycle(is_forced: bool = False):
                         "total_krw": xrp_amount * current_price, "reason": exec_reason,
                         "timestamp": datetime.now().isoformat()
                     })
-                await notify_subscribers("balance_update", upbit_client.get_balances())
+                await notify_subscribers("balance_update", exchange_client.get_balances())
                 return
 
             # +5.0% 이상 상승 시 전량 익절매 발동 (손익비를 높여 큰 추세를 먹기 위함)
@@ -128,7 +128,7 @@ async def execute_trading_cycle(is_forced: bool = False):
                         "total_krw": xrp_amount * current_price, "reason": exec_reason,
                         "timestamp": datetime.now().isoformat()
                     })
-                await notify_subscribers("balance_update", upbit_client.get_balances())
+                await notify_subscribers("balance_update", exchange_client.get_balances())
                 return
 
         # 3.5. 과거 판단 복기 및 경험 데이터 로드
