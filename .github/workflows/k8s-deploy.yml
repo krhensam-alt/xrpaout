@@ -8,11 +8,10 @@ jobs:
   deploy:
     runs-on: self-hosted
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -22,32 +21,43 @@ jobs:
           npm install --legacy-peer-deps
           npm run build
 
-      - name: Build and Load Images
+      - name: Set Tag
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Build and Export Docker Images
         run: |
-          # Create unique tag based on commit SHA
-          TAG=$(git rev-parse --short HEAD)
-          
-          # Build Backend
+          TAG=${{ steps.vars.outputs.sha_short }}
           docker build -t xrpaout-backend:$TAG ./backend
-          
-          # Build Frontend
           docker build -t xrpaout-frontend:$TAG ./frontend
+          docker save xrpaout-backend:$TAG -o backend.tar
+          docker save xrpaout-frontend:$TAG -o frontend.tar
+        shell: bash
+
+      - name: Deploy to Remote Server (192.168.0.22)
+        run: |
+          $TAG = "${{ steps.vars.outputs.sha_short }}"
+          $PW = "*Leotek0719!"
           
-          # Minikube Diagnostics
-          minikube status || true
-          MINIKUBE_IP=$(minikube ip)
-          echo "Minikube IP: $MINIKUBE_IP"
+          # 1. Transfer images and manifest
+          & "C:\Program Files\PuTTY\pscp.exe" -pw $PW backend.tar frontend.tar k8s/xrpaout-k8s.yaml root@192.168.0.22:/root/
           
-          # Load into Minikube
-          minikube image load xrpaout-backend:$TAG
-          minikube image load xrpaout-frontend:$TAG
+          # 2. Remote Load and Deploy
+          $RemoteCmd = "docker load -i /root/backend.tar && " +
+                       "docker load -i /root/frontend.tar && " +
+                       "sed -i 's|image: xrpaout-backend:.*|image: xrpaout-backend:$TAG|g' /root/xrpaout-k8s.yaml && " +
+                       "sed -i 's|image: xrpaout-frontend:.*|image: xrpaout-frontend:$TAG|g' /root/xrpaout-k8s.yaml && " +
+                       "kubectl apply -f /root/xrpaout-k8s.yaml && " +
+                       "kubectl rollout restart deployment xrpaout-deployment && " +
+                       "rm /root/backend.tar /root/frontend.tar && " +
+                       "screen -X -S portforward-api quit || true && " +
+                       "screen -X -S portforward-web quit || true && " +
+                       "screen -dmS portforward-api kubectl port-forward --address 0.0.0.0 svc/xrpaout-service 13151:13151 && " +
+                       "screen -dmS portforward-web kubectl port-forward --address 0.0.0.0 svc/xrpaout-service 13152:13152"
           
-          # Update K8s Manifest with new tags
-          sed -i "s|image: xrpaout-backend:.*|image: xrpaout-backend:$TAG|g" k8s/xrpaout-k8s.yaml
-          sed -i "s|image: xrpaout-frontend:.*|image: xrpaout-frontend:$TAG|g" k8s/xrpaout-k8s.yaml
-          
-          # Apply to K8s
-          kubectl apply -f k8s/xrpaout-k8s.yaml
-          
-          # Force rollout to ensure the new pod starts
-          kubectl rollout restart deployment xrpaout-deployment
+          & "C:\Program Files\PuTTY\plink.exe" -pw $PW root@192.168.0.22 $RemoteCmd
+        shell: powershell
+
+
+

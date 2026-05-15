@@ -1,53 +1,49 @@
 # GitHub Actions 자동 배포용 프롬프트 (템플릿)
 
-이 프로젝트의 배포 방식을 다른 프로젝트(GitHub 기반)에 적용할 때 사용할 수 있는 프롬프트와 가이드입니다. **[ ]**로 표시된 부분에 새 프로젝트 정보를 입력하세요.
+이 프로젝트의 **원격 쿠버네티스(Remote K8s) 자동 배포** 방식을 다른 프로젝트에 적용할 때 사용할 수 있는 가이드입니다.
 
 ---
 
 ## 1. AI에게 전달할 프롬프트 (복사해서 사용)
 
 > **[프롬프트 시작]**
-> 이전 프로젝트(`smart-buoy-monitoring`)의 배포 방식을 참고해서, 현재 프로젝트를 GitHub에 `push`하면 자동으로 쿠버네티스(K8s)에 배포되도록 GitHub Actions 워크플로우(`.github/workflows/deploy.yml`)를 만들어줘.
+> `xrpaout` 프로젝트의 배포 방식을 참고하여, 현재 프로젝트를 GitHub에 `push`하면 **원격 서버의 쿠버네티스**에 자동 배포되도록 GitHub Actions 워크플로우를 만들어줘.
 > 
 > **현재 프로젝트 정보:**
 > - **프로젝트 이름:** [예: My-New-App]
-> - **구성:** [예: 백엔드(Node.js) + 프론트엔드(React)]
-> - **이미지 이름:** [예: my-app-server, my-app-client]
+> - **이미지 이름:** [예: my-app-backend, my-app-frontend]
+> - **원격 서버 IP:** [예: 192.168.0.22]
 > 
 > **요구사항:**
-> 1. **환경:** 로컬 서버의 **Self-hosted runner**를 사용해 (서버 IP: [서버 IP 입력]).
-> 2. **빌드 방식:** `[Dockerfile 이름]`을 사용해 이미지를 빌드하고, 태그는 `latest`로 설정해줘.
-> 3. **배포 방식:** `k8s/` 폴더의 매니페스트를 적용하고, `kubectl rollout restart`를 포함해줘.
-> 4. **포트 설정:** 외부 접속 포트는 `[외부 포트]`번을 사용해야 해.
-> 5. **검증:** 배포 후 정상 작동하는지 확인하는 단계를 포함해줘.
+> 1. **Runner:** 로컬망의 **Self-hosted runner**를 사용해.
+> 2. **빌드 및 전송:** Docker 이미지를 빌드한 뒤, `docker save`로 TAR 파일을 만들고 `pscp.exe`를 사용해 원격 서버로 전송해.
+> 3. **원격 배포:** `plink.exe`를 사용해 원격 서버에서 이미지를 `docker load`하고, `kubectl apply`를 수행해.
+> 4. **서비스 노출:** 배포 후 `screen`을 사용해 `kubectl port-forward`를 백그라운드에서 실행하여 외부 접속 포트를 확보해줘.
+> 5. **태그 관리:** Git Commit SHA를 사용하여 매 배포마다 고유한 이미지 태그를 생성하고 YAML을 업데이트해줘.
 > **[프롬프트 끝]**
 
 ---
 
-## 2. 프로젝트 이동 시 필수 수정 항목 (IP & PORT)
+## 2. 필수 구성 요소 및 수정 항목
 
-새 프로젝트에 적용할 때 아래 파일들의 값을 반드시 확인하고 수정해야 합니다.
+### ① `.github/workflows/deploy.yml`
+- **`$PW`**: 서버 접속 비밀번호 (GitHub Secrets 사용 권장).
+- **`pscp/plink 경로`**: PuTTY 설치 경로 확인 (보통 `C:\Program Files\PuTTY\`).
+- **`RemoteCmd`**: 원격 서버에서 실행할 일련의 명령(load -> sed -> apply -> rollout -> port-forward).
 
-### ① `k8s/configmap.yaml` (환경 변수)
-- **`DB_HOST`**: [데이터베이스 서버의 IP 주소를 입력하세요]
-- **`DB_PORT`**: [DB 접속 포트를 입력하세요 (예: 5432)]
-- **`HTTP_PORT`**: [백엔드 서버가 사용할 포트를 입력하세요]
-- **`TCP_PORT`**: [데이터 수신용 TCP 포트가 있다면 입력하세요]
+### ② `k8s/manifests.yaml`
+- **`imagePullPolicy: Never`**: 원격 서버 로컬 이미지를 사용하므로 반드시 `Never`로 설정.
+- **`NodePort`**: 서비스 타입 및 포트 번호 확인.
 
-### ② `k8s/service.yaml` (외부 노출 포트)
-- **`nodePort`**: [웹 브라우저나 외부에서 접속할 때 쓸 포트 번호를 입력하세요]
-- **`port`**: [쿠버네티스 내부에서 서비스가 사용할 포트]
-- **`targetPort`**: [실제 컨테이너 안에서 돌아가는 앱의 포트]
-
-### ③ `k8s/deployment.yaml` (컨테이너 설정)
-- **`hostPort`**: [호스트 PC의 포트와 직접 연결할 포트 번호를 입력하세요]
-- **`image`**: [빌드된 Docker 이미지 이름을 입력하세요]
-- **`replicas`**: [서버 대수를 몇 대로 할지 입력하세요 (보통 1)]
+### ③ 원격 서버 환경
+- **Docker & kubectl**: 원격 서버에 설치되어 있어야 함.
+- **GNU Screen**: 백그라운드 포트 포워딩을 위해 `screen` 설치 권장.
 
 ---
 
-## 3. GitHub 설정 가이드
+## 3. 트러블슈팅 가이드
 
-1. **Self-hosted Runner**: 서버에 직접 배포한다면 해당 서버에 GitHub Runner를 설치해야 합니다.
-2. **Secrets**: DB 비밀번호(`DB_PASSWORD`) 등은 GitHub `Settings > Secrets`에 등록하세요.
-3. **K8s Namespace**: 특정 네임스페이스를 사용한다면 매니페스트 파일의 `metadata: namespace:` 부분을 수정하세요.
+1. **디스크 꽉 참**: `minikube status`에서 `InsufficientStorage`가 뜨면 `docker system prune -f`를 실행하세요.
+2. **접속 불가**: 서버에서 `netstat -tuln | grep [포트]`를 통해 포트 포워딩 프로세스가 살아있는지 확인하세요.
+3. **권한 오류**: `plink` 사용 시 첫 접속이라면 `known_hosts`에 등록되어야 합니다.
+
