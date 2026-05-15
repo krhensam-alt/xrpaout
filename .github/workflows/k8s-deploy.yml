@@ -11,6 +11,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm run build
+
       - name: Build and Load Images
         run: |
           # Create unique tag based on commit SHA
@@ -21,6 +32,11 @@ jobs:
           
           # Build Frontend
           docker build -t xrpaout-frontend:$TAG ./frontend
+          
+          # Minikube Diagnostics
+          minikube status || true
+          MINIKUBE_IP=$(minikube ip)
+          echo "Minikube IP: $MINIKUBE_IP"
           
           # Load into Minikube
           minikube image load xrpaout-backend:$TAG
