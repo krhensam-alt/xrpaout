@@ -1,0 +1,37 @@
+name: Kubernetes Auto Deploy
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build and Load Images
+        run: |
+          # Create unique tag based on commit SHA
+          TAG=$(git rev-parse --short HEAD)
+          
+          # Build Backend
+          docker build -t xrpaout-backend:$TAG ./backend
+          
+          # Build Frontend
+          docker build -t xrpaout-frontend:$TAG ./frontend
+          
+          # Load into Minikube
+          minikube image load xrpaout-backend:$TAG
+          minikube image load xrpaout-frontend:$TAG
+          
+          # Update K8s Manifest with new tags
+          sed -i "s|image: xrpaout-backend:.*|image: xrpaout-backend:$TAG|g" k8s/xrpaout-k8s.yaml
+          sed -i "s|image: xrpaout-frontend:.*|image: xrpaout-frontend:$TAG|g" k8s/xrpaout-k8s.yaml
+          
+          # Apply to K8s
+          kubectl apply -f k8s/xrpaout-k8s.yaml
+          
+          # Force rollout to ensure the new pod starts
+          kubectl rollout restart deployment xrpaout-deployment
