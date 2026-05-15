@@ -112,7 +112,7 @@ Assets:
 Return the JSON decision."""
 
     payload = {
-        "model": "local-model",
+        "model": config.LM_STUDIO_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}

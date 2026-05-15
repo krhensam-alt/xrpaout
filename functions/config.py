@@ -11,6 +11,7 @@ class Config:
     
     # LM Studio Public URL (사용자 PC 포트포워딩 주소)
     LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://112.220.123.154:13151/v1")
+    LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "gemma-2-2b-it")
     
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8816432912:AAG6xv_ieQbFHaPWVvy8MbwnfC3chnX24vo")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "6779572088")

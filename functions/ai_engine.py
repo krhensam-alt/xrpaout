@@ -75,7 +75,7 @@ def query_ai_decision(indicators: dict, balances: dict) -> dict:
 위 데이터를 기반으로 최선의 매매 결정을 JSON으로만 반환하세요."""
 
     payload = {
-        "model": "local-model",
+        "model": config.LM_STUDIO_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}

@@ -13,6 +13,7 @@ class Config:
     SELECTED_EXCHANGE = os.getenv("SELECTED_EXCHANGE", "UPBIT").upper()
     
     LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
+    LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "local-model")
     TRADING_INTERVAL_MINUTES = int(os.getenv("TRADING_INTERVAL_MINUTES", "10"))
     MAX_INVESTMENT_KRW = float(os.getenv("MAX_INVESTMENT_KRW", "100000"))
     
