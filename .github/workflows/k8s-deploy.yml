@@ -10,54 +10,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Build Frontend
-        working-directory: ./frontend
-        run: |
-          npm install --legacy-peer-deps
-          npm run build
-
       - name: Set Tag
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
         shell: bash
 
-      - name: Build and Export Docker Images
+      - name: Build Docker Images
         run: |
           TAG=${{ steps.vars.outputs.sha_short }}
           docker build -t xrpaout-backend:$TAG ./backend
           docker build -t xrpaout-frontend:$TAG ./frontend
-          docker save xrpaout-backend:$TAG -o backend.tar
-          docker save xrpaout-frontend:$TAG -o frontend.tar
         shell: bash
 
-      - name: Deploy to Remote Server (192.168.0.22)
+      - name: Update Manifest and Deploy
         run: |
-          $TAG = "${{ steps.vars.outputs.sha_short }}"
-          $PW = "*Leotek0719!"
+          TAG=${{ steps.vars.outputs.sha_short }}
+          # The runner is on the server, so we can apply directly
+          MANIFEST_PATH="/root/xrpaout-k8s.yaml"
+          cp k8s/xrpaout-k8s.yaml $MANIFEST_PATH
           
-          # 1. Transfer images and manifest
-          & "C:\Program Files\PuTTY\pscp.exe" -pw $PW backend.tar frontend.tar k8s/xrpaout-k8s.yaml root@192.168.0.22:/root/
+          sed -i "s|image: xrpaout-backend:.*|image: xrpaout-backend:$TAG|g" $MANIFEST_PATH
+          sed -i "s|image: xrpaout-frontend:.*|image: xrpaout-frontend:$TAG|g" $MANIFEST_PATH
           
-          # 2. Remote Load and Deploy
-          $RemoteCmd = "docker load -i /root/backend.tar && " +
-                       "docker load -i /root/frontend.tar && " +
-                       "sed -i 's|image: xrpaout-backend:.*|image: xrpaout-backend:$TAG|g' /root/xrpaout-k8s.yaml && " +
-                       "sed -i 's|image: xrpaout-frontend:.*|image: xrpaout-frontend:$TAG|g' /root/xrpaout-k8s.yaml && " +
-                       "kubectl apply -f /root/xrpaout-k8s.yaml && " +
-                       "kubectl rollout restart deployment xrpaout-deployment && " +
-                       "rm /root/backend.tar /root/frontend.tar && " +
-                       "screen -X -S portforward-api quit || true && " +
-                       "screen -X -S portforward-web quit || true && " +
-                       "screen -dmS portforward-api kubectl port-forward --address 0.0.0.0 svc/xrpaout-service 13151:13151 && " +
-                       "screen -dmS portforward-web kubectl port-forward --address 0.0.0.0 svc/xrpaout-service 13152:13152"
+          kubectl apply -f $MANIFEST_PATH
+          kubectl rollout restart deployment xrpaout-deployment
           
-          & "C:\Program Files\PuTTY\plink.exe" -pw $PW root@192.168.0.22 $RemoteCmd
-        shell: powershell
+          # Optional: Re-establish port forwarding if using screen
+          # (Note: Using LoadBalancer or NodePort is recommended over port-forwarding for production)
+          screen -X -S portforward-api quit || true
+          screen -X -S portforward-web quit || true
+          screen -dmS portforward-api kubectl port-forward --address 0.0.0.0 svc/xrpaout-service 13151:13151
+          screen -dmS portforward-web kubectl port-forward --address 0.0.0.0 svc/xrpaout-service 13152:13152
+        shell: bash
 
 
 
