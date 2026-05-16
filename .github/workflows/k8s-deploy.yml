@@ -20,6 +20,8 @@ jobs:
           TAG=${{ steps.vars.outputs.sha_short }}
           docker build -t xrpaout-backend:$TAG ./backend
           docker build -t xrpaout-frontend:$TAG ./frontend
+          minikube image load xrpaout-backend:$TAG
+          minikube image load xrpaout-frontend:$TAG
         shell: bash
 
       - name: Update Manifest and Deploy
