@@ -178,6 +178,30 @@ class BinanceClient:
             print(f"주문 취소 실패: {e}")
             return False
 
+    def check_safety_orders(self, amount: float, buy_price: float) -> bool:
+        """거래소에 안전 OCO 주문이 정상적으로 등록되어 있는지 확인"""
+        if self.is_mock: return True
+        try:
+            orders = self.client.get_open_orders(symbol=self.symbol)
+            if not orders:
+                return False
+            
+            tp_price = round(buy_price * 1.050, 4)
+            
+            # 매도 주문('SELL') 중 익절 가격과 수량이 대략 일치하는 주문이 있는지 확인
+            for order in orders:
+                if order['side'] == 'SELL':
+                    order_price = float(order['price'])
+                    order_volume = float(order['origQty'])
+                    
+                    # 가격 오차 1% 이내, 수량 오차 2% 이내 허용
+                    if abs(order_price - tp_price) / tp_price < 0.01 and abs(order_volume - amount) / amount < 0.02:
+                        return True
+            return False
+        except Exception as e:
+            print(f"바이낸스 안전 주문 상태 조회 실패: {e}")
+            return True # API 오류 시 중복 등록 방지를 위해 일단 True 반환
+
     def place_safety_orders(self, amount: float, buy_price: float):
         """매수 직후 익절(+2.5%) 및 손절(-3.5%) OCO 주문 예약 (서버 다운 대비)"""
         if self.is_mock: return {"success": True, "info": "MOCK_OCO_PLACED"}

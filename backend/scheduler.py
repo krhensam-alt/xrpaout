@@ -131,6 +131,30 @@ async def execute_trading_cycle(is_forced: bool = False):
                 await notify_subscribers("balance_update", exchange_client.get_balances())
                 return
 
+        # 3.2. 거래소 안전 예약 주문(안전장치) 실시간 점검 및 복구 로직
+        if xrp_amount * current_price > MIN_ORDER_VALUE and avg_buy_price > 0:
+            print("🛡️ 거래소 안전 예약 주문(안전장치) 상태 점검 중...")
+            try:
+                safety_active = exchange_client.check_safety_orders(xrp_amount, avg_buy_price)
+                if not safety_active:
+                    print("⚠️ 거래소 안전 예약 주문이 유실된 것을 감지했습니다. 재등록을 시도합니다.")
+                    send_telegram_message("⚠️ *[안전장치 유실 감지]*\n거래소에 직접 등록된 안전 예약 주문(지정가/OCO)이 유실된 것을 감지했습니다. 재등록을 진행합니다.")
+                    
+                    # 꼬임 방지를 위해 기존 미체결 주문 취소 후 재등록
+                    exchange_client.cancel_all_orders()
+                    safety_res = exchange_client.place_safety_orders(xrp_amount, avg_buy_price)
+                    if safety_res.get("success"):
+                        print("🛡️ 거래소 안전 예약 주문 재등록 완료")
+                        send_telegram_message("🛡️ *[안전장치 재가동 완료]*\n거래소 서버에 안전 예약 주문을 성공적으로 재등록했습니다.")
+                    else:
+                        err_reason = safety_res.get("reason", "알 수 없는 오류")
+                        print(f"❌ 안전장치 재등록 실패: {err_reason}")
+                        send_telegram_message(f"❌ *[안전장치 재등록 실패]*\n사유: `{err_reason}`")
+                else:
+                    print("🛡️ 거래소 안전 예약 주문(안전장치)이 정상 작동 중입니다.")
+            except Exception as safety_err:
+                print(f"⚠️ 안전장치 검증 중 오류 발생: {safety_err}")
+
         # 3.5. 과거 판단 복기 및 경험 데이터 로드
         await evaluate_past_reports(current_price)
         experiences = get_ai_experiences(limit=5)

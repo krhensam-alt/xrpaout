@@ -172,6 +172,30 @@ class UpbitClient:
             print(f"업비트 주문 취소 실패: {e}")
             return False
 
+    def check_safety_orders(self, amount: float, buy_price: float) -> bool:
+        """거래소에 안전 매도 주문이 정상적으로 등록되어 있는지 확인"""
+        if self.is_mock: return True
+        try:
+            orders = self.upbit.get_order("KRW-XRP", state="wait")
+            if not orders:
+                return False
+            
+            tp_price = pyupbit.get_tick_size(buy_price * 1.050)
+            
+            # 매도 주문('ask') 중 가격과 수량이 대략 일치하는 주문이 있는지 확인
+            for order in orders:
+                if order['side'] == 'ask':
+                    order_price = float(order['price'])
+                    order_volume = float(order['volume'])
+                    
+                    # 호가 단위 오차 및 수량 미세차이 고려 (가격 1% 이내, 수량 2% 이내 오차 허용)
+                    if abs(order_price - tp_price) / tp_price < 0.01 and abs(order_volume - amount) / amount < 0.02:
+                        return True
+            return False
+        except Exception as e:
+            print(f"업비트 안전 주문 상태 조회 실패: {e}")
+            return True # API 오류 시 중복 등록 방지를 위해 일단 True 반환
+
     def place_safety_orders(self, amount: float, buy_price: float):
         """매수 직후 익절(+5.0%) 지정가 매도 예약 (서버 다운 대비)"""
         if self.is_mock: return {"success": True, "info": "MOCK_LIMIT_PLACED"}
