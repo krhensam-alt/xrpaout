@@ -9,6 +9,26 @@ from ai_engine import query_ai_decision
 from database import save_ai_report, save_trade_log, get_ai_experiences, update_ai_report_outcome, get_db_connection
 from telegram_notifier import send_telegram_message
 import sqlite3
+import os
+import json
+
+STATE_FILE = os.path.join(os.path.dirname(__file__), "trading_state.json")
+
+def load_trading_state() -> dict:
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"highest_price_since_buy": 0.0}
+
+def save_trading_state(state: dict):
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(state, f, indent=4)
+    except Exception as e:
+        print(f"상태 파일 저장 오류: {e}")
 
 # 브로드캐스팅용 콜백 함수 목록 관리
 broadcast_callbacks = []
@@ -32,13 +52,12 @@ async def evaluate_past_reports(current_price: float):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # 아직 평가되지 않았고, 4시간 이상 경과한 리포트 조회 (너무 오래된 건 제외)
-        # SQLite의 datetime 함수를 사용하여 약 4시간 전 데이터 추출
+        # 아직 평가되지 않았고, 55분 이상 경과한 리포트 조회 (이전 시간 분석 결과를 다음 시간 분석 시점에 바로 경험으로 활용)
         cursor.execute("""
             SELECT id, decision, price_at_decision, timestamp 
             FROM ai_reports 
             WHERE outcome_status IS NULL 
-            AND timestamp < datetime('now', '-4 hours')
+            AND timestamp < datetime('now', '-55 minutes')
             ORDER BY id DESC LIMIT 20
         """)
         pending_reports = cursor.fetchall()
@@ -87,40 +106,52 @@ async def execute_trading_cycle(is_forced: bool = False):
         current_price = indicators.get("current_price", 0.0)
         xrp_amount = balances.get("xrp", 0.0)
 
-        # 🚨 최우선 기계적 리스크 관리 필터 (Stop-Loss 및 Take-Profit 강제 집행)
+        # 🚨 최우선 기계적 리스크 관리 필터 (추적 손절매 및 익절매 잠금)
         if xrp_amount * current_price > MIN_ORDER_VALUE and avg_buy_price > 0:
-            profit_rate = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            state = load_trading_state()
+            highest_price = state.get("highest_price_since_buy", 0.0)
             
-            # -3.5% 이하 하락 시 전량 손절매 발동
-            if profit_rate <= -3.5:
-                print(f"🚨 [기계적 손절매 발동] 현재가({current_price})가 평단가({avg_buy_price}) 대비 {profit_rate:.2f}% 하락. 자산 보호를 위해 전량 매도합니다.")
-                order_res = exchange_client.execute_order("SELL", 100.0)
-                if order_res.get("success"):
-                    exec_reason = f"[자동 손절매 집행] 수익률 {profit_rate:.2f}% 도달로 인한 전량 시장가 매도"
-                    save_trade_log("SELL", current_price, xrp_amount, xrp_amount * current_price, exec_reason)
-                    
-                    # 텔레그램 실시간 알림 발송
-                    tg_msg = f"🚨 *[자산 보호 손절매 집행]*\n• 종목: XRP\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 매수평단: `{avg_buy_price:,.4f}` {PRICE_UNIT}\n• 손실률: *{profit_rate:.2f}%*\n• 사유: 계좌 보호를 위한 전량 시장가 매도 완료."
-                    send_telegram_message(tg_msg)
-                    
-                    await notify_subscribers("new_trade", {
-                        "decision": "SELL", "price": current_price, "amount": xrp_amount,
-                        "total_krw": xrp_amount * current_price, "reason": exec_reason,
-                        "timestamp": datetime.now().isoformat()
-                    })
-                await notify_subscribers("balance_update", exchange_client.get_balances())
-                return
+            # 초기화 혹은 갱신
+            if highest_price <= 0.0 or highest_price < avg_buy_price:
+                highest_price = max(avg_buy_price, current_price)
+                
+            if current_price > highest_price:
+                highest_price = current_price
+                save_trading_state({"highest_price_since_buy": highest_price})
+                print(f"📈 최고가 갱신: {highest_price:,.4f} {PRICE_UNIT}")
 
-            # +5.0% 이상 상승 시 전량 익절매 발동 (손익비를 높여 큰 추세를 먹기 위함)
-            elif profit_rate >= 5.0:
-                print(f"🎉 [기계적 익절매 발동] 현재가({current_price})가 평단가({avg_buy_price}) 대비 {profit_rate:.2f}% 상승. 확실한 수익 실현을 위해 전량 매도합니다.")
+            highest_profit_rate = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0
+            current_profit_rate = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+
+            # 추적 손절라인 계산
+            # 1. 최고수익률이 +5.0% 이상 도달한 적이 있으면 최고가 대비 -2.5% 추적 익절/손절 적용 (추세 극대화)
+            if highest_profit_rate >= 5.0:
+                trailing_sl_price = highest_price * 0.975
+                trigger_reason = f"최고 수익률 {highest_profit_rate:.2f}% 도달 후 최고가({highest_price:,.4f}) 대비 -2.5% 추적 매도"
+                is_triggered = current_price <= trailing_sl_price
+                sl_type = "추적 익절매" if trailing_sl_price > avg_buy_price else "추적 손절매"
+            # 2. 최고수익률이 +3.0% ~ +5.0% 도달한 적이 있으면 +1.0% 수익 안전 확보 (수익 잠금)
+            elif highest_profit_rate >= 3.0:
+                trailing_sl_price = avg_buy_price * 1.01
+                trigger_reason = f"최고 수익률 {highest_profit_rate:.2f}% 도달 후 +1.0% 수익 안전 확보 매도"
+                is_triggered = current_price <= trailing_sl_price
+                sl_type = "수익 확보 매도"
+            # 3. 기본 손절 라인 (-3.5% 고정)
+            else:
+                trailing_sl_price = avg_buy_price * 0.965
+                trigger_reason = f"평단가 대비 -3.5% 하락으로 인한 계좌 보호 손절매"
+                is_triggered = current_profit_rate <= -3.5
+                sl_type = "기본 손절매"
+
+            if is_triggered:
+                print(f"🚨 [{sl_type} 발동] 현재가({current_price})가 손절라인({trailing_sl_price:,.4f}) 도달. 사유: {trigger_reason}")
                 order_res = exchange_client.execute_order("SELL", 100.0)
                 if order_res.get("success"):
-                    exec_reason = f"[자동 익절매 집행] 수익률 {profit_rate:.2f}% 도달로 인한 전량 수익 실현 매도"
+                    exec_reason = f"[{sl_type} 집행] {trigger_reason}"
                     save_trade_log("SELL", current_price, xrp_amount, xrp_amount * current_price, exec_reason)
                     
                     # 텔레그램 실시간 알림 발송
-                    tg_msg = f"🎉 *[누적 수익 익절매 집행]*\n• 종목: XRP\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 매수평단: `{avg_buy_price:,.4f}` {PRICE_UNIT}\n• 수익률: *+{profit_rate:.2f}%*\n• 사유: 목표 수익 실현을 위한 전량 매도 완료."
+                    tg_msg = f"🚨 *[{sl_type} 집행]*\n• 종목: XRP\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 매수평단: `{avg_buy_price:,.4f}` {PRICE_UNIT}\n• 최고수익률: *+{highest_profit_rate:.2f}%*\n• 현재수익률: *{current_profit_rate:+.2f}%*\n• 사유: {trigger_reason}"
                     send_telegram_message(tg_msg)
                     
                     await notify_subscribers("new_trade", {
@@ -128,6 +159,10 @@ async def execute_trading_cycle(is_forced: bool = False):
                         "total_krw": xrp_amount * current_price, "reason": exec_reason,
                         "timestamp": datetime.now().isoformat()
                     })
+                    
+                    # 상태 초기화
+                    save_trading_state({"highest_price_since_buy": 0.0})
+                    
                 await notify_subscribers("balance_update", exchange_client.get_balances())
                 return
 
@@ -175,10 +210,15 @@ async def execute_trading_cycle(is_forced: bool = False):
             reason = f"[잔고 부족으로 매수 취소] {reason}"
             percentage = 0.0
 
-        # 거시 지표 기반 필터링 보완: 비트코인 단기 급락 추세 시 매수 보류
-        btc_price = balances.get("btc_price", 0.0)
-        if decision == "BUY" and btc_price > 0 and indicators.get("rsi_14", 50) > 40:
-            reason += " (참조: 기계적 거시 필터 적용으로 분할 매수 승인)"
+        # 거시 지표 기반 필터링 보완: 비트코인 단기 급락 추세 시 매수 차단 및 보류
+        btc_change_rate = exchange_client.get_btc_change_rate()
+        if decision == "BUY" and btc_change_rate <= -1.5:
+            print(f"⚠️ [매수 차단] 비트코인 단기 급락 감지 (변동률: {btc_change_rate:.2f}%). 매수 결정을 보류하고 HOLD로 전환합니다.")
+            decision = "HOLD"
+            reason = f"[비트코인 급락으로 매수 차단] 비트코인 1시간 변동률 {btc_change_rate:.2f}%로 급락 경고 감지."
+            percentage = 0.0
+        elif decision == "BUY" and btc_change_rate > -1.5:
+            reason += f" (참조: 비트코인 변동률 {btc_change_rate:+.2f}%로 안정적인 마켓 상황 확인)"
             
         # AI 리포트 DB 저장 (현재가 포함)
         save_ai_report(decision, confidence, percentage, reason, indicators, current_price)
@@ -206,6 +246,12 @@ async def execute_trading_cycle(is_forced: bool = False):
                 exec_reason = f"[{decision}] AI 판단에 따른 자동 실행: {reason}"
                 
                 save_trade_log(decision, price, amount, total_krw, exec_reason)
+                
+                # 최고가 상태 관리 파일 업데이트
+                if decision == "BUY":
+                    save_trading_state({"highest_price_since_buy": price})
+                elif decision == "SELL":
+                    save_trading_state({"highest_price_since_buy": 0.0})
                 
                 # 🛡️ 서버 다운 대비 예약 주문(Safety Net) 즉시 실행
                 safety_res = exchange_client.place_safety_orders(amount, price)

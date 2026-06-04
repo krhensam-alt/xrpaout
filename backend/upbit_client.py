@@ -180,7 +180,7 @@ class UpbitClient:
             if not orders:
                 return False
             
-            tp_price = pyupbit.get_tick_size(buy_price * 1.050)
+            tp_price = pyupbit.get_tick_size(buy_price * 1.100) # 안전장치는 +10%로 상향 설정
             
             # 매도 주문('ask') 중 가격과 수량이 대략 일치하는 주문이 있는지 확인
             for order in orders:
@@ -197,10 +197,10 @@ class UpbitClient:
             return True # API 오류 시 중복 등록 방지를 위해 일단 True 반환
 
     def place_safety_orders(self, amount: float, buy_price: float):
-        """매수 직후 익절(+5.0%) 지정가 매도 예약 (서버 다운 대비)"""
+        """매수 직후 익절(+10.0%) 지정가 매도 예약 (서버 다운 대비)"""
         if self.is_mock: return {"success": True, "info": "MOCK_LIMIT_PLACED"}
         
-        tp_price = pyupbit.get_tick_size(buy_price * 1.050)
+        tp_price = pyupbit.get_tick_size(buy_price * 1.100) # 안전장치는 +10%로 상향 설정
         try:
             # 지정가 매도 예약
             res = self.upbit.sell_limit_order("KRW-XRP", tp_price, amount)
@@ -208,5 +208,18 @@ class UpbitClient:
         except Exception as e:
             print(f"업비트 안전 주문 예약 실패: {e}")
             return {"success": False, "reason": str(e)}
+
+    def get_btc_change_rate(self) -> float:
+        """비트코인 최근 1시간 변동률(%) 조회"""
+        if self.is_mock: return 0.0
+        try:
+            df = pyupbit.get_ohlcv("KRW-BTC", interval="minute60", count=2)
+            if df is not None and len(df) >= 2:
+                prev_close = float(df['close'].iloc[-2])
+                curr_price = float(df['close'].iloc[-1])
+                return ((curr_price - prev_close) / prev_close) * 100.0
+        except Exception as e:
+            print(f"비트코인 변동률 조회 실패: {e}")
+        return 0.0
 
 upbit_client = UpbitClient()

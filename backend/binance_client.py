@@ -186,7 +186,7 @@ class BinanceClient:
             if not orders:
                 return False
             
-            tp_price = round(buy_price * 1.050, 4)
+            tp_price = round(buy_price * 1.100, 4) # 안전장치는 +10%로 상향 설정
             
             # 매도 주문('SELL') 중 익절 가격과 수량이 대략 일치하는 주문이 있는지 확인
             for order in orders:
@@ -203,10 +203,10 @@ class BinanceClient:
             return True # API 오류 시 중복 등록 방지를 위해 일단 True 반환
 
     def place_safety_orders(self, amount: float, buy_price: float):
-        """매수 직후 익절(+2.5%) 및 손절(-3.5%) OCO 주문 예약 (서버 다운 대비)"""
+        """매수 직후 익절(+10.0%) 및 손절(-3.5%) OCO 주문 예약 (서버 다운 대비)"""
         if self.is_mock: return {"success": True, "info": "MOCK_OCO_PLACED"}
         
-        tp_price = round(buy_price * 1.050, 4)
+        tp_price = round(buy_price * 1.100, 4) # 안전장치는 +10%로 상향 설정
         sl_price = round(buy_price * 0.965, 4)
         stop_limit_price = round(sl_price * 0.995, 4) # 손절 실행가보다 약간 낮게 설정
         
@@ -225,5 +225,18 @@ class BinanceClient:
         except Exception as e:
             print(f"바이낸스 안전 주문(OCO) 예약 실패: {e}")
             return {"success": False, "reason": str(e)}
+
+    def get_btc_change_rate(self) -> float:
+        """비트코인 최근 1시간 변동률(%) 조회"""
+        if self.is_mock: return 0.0
+        try:
+            klines = self.client.get_klines(symbol="BTCUSDT", interval="1h", limit=2)
+            if klines and len(klines) >= 2:
+                prev_close = float(klines[-2][4]) # Close price of previous candle
+                curr_price = float(klines[-1][4]) # Close price of current candle
+                return ((curr_price - prev_close) / prev_close) * 100.0
+        except Exception as e:
+            print(f"비트코인 변동률 조회 실패: {e}")
+        return 0.0
 
 binance_client = BinanceClient()
