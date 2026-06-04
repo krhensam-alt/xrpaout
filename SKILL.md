@@ -43,7 +43,7 @@ graph TD
     %% 외부 및 로컬 서비스
     subgraph Infrastructure [외부 및 로컬 인프라]
         BACKEND <-->|REST API| EXCHANGES[Upbit / Binance]
-        BACKEND <-->|REST API| LMSTUDIO[LM Studio: 192.168.0.79]
+        BACKEND <-->|REST API| LMSTUDIO[LM Studio: 192.168.0.237]
         BACKEND -->|Notification| TELEGRAM[Telegram Bot]
     end
 
@@ -56,14 +56,14 @@ graph TD
 ## 2. 핵심 모듈 및 자동 배포 (CI/CD)
 
 ### 2.1. 자동 배포 파이프라인 (GitHub Actions)
-- **Self-hosted Runner**: 개발 PC(`192.168.0.79`)에서 동작하는 러너를 통해 내부망 서버에 직접 접근.
+- **Self-hosted Runner**: 개발 PC(`192.168.0.237`)에서 동작하는 러너를 통해 내부망 서버에 직접 접근.
 - **빌드 및 이미지 전송**:
   - `Vite`를 사용한 프론트엔드 최적화 빌드.
   - `Docker` 이미지를 빌드하고 TAR 파일로 내보낸 후 `pscp`를 통해 원격 서버로 보안 전송.
 - **원격 오케스트레이션**: `plink`를 사용해 원격 서버에서 이미지를 로드하고 `kubectl` 명령으로 무중단 배포(Rolling Update) 수행.
 
 ### 2.2. AI 분석 및 의사결정 모듈 (AI Brain)
-- **로컬 LLM 서버**: 전용 AI 워크스테이션(`192.168.0.79`)에 띄워진 LM Studio(Gemma 모델)와 통신하여 분석 비용 제로(Zero Cost) 실현.
+- **로컬 LLM 서버**: 전용 AI 워크스테이션(`192.168.0.237`)에 띄워진 LM Studio(Gemma 모델)와 통신하여 분석 비용 제로(Zero Cost) 실현.
 - **분석 주기**: `TRADING_INTERVAL_MINUTES=60` 설정에 따라 1시간 주기로 데이터 분석 및 매매 결정.
 - **구조화된 출력**: AI 판단 결과를 JSON으로 수신하여 즉각적인 주문 처리 및 DB 기록.
 
@@ -85,7 +85,7 @@ graph TD
 # 주요 환경 변수 예시
 UPBIT_ACCESS_KEY=******
 UPBIT_SECRET_KEY=******
-LM_STUDIO_BASE_URL=http://192.168.0.79:1234/v1
+LM_STUDIO_BASE_URL=http://192.168.0.237:1234/v1
 TRADING_INTERVAL_MINUTES=60
 MAX_INVESTMENT_KRW=100000
 DATABASE_PATH=/app/data/trading_log.db
