@@ -189,41 +189,41 @@ Return the JSON decision."""
         from telegram_notifier import send_telegram_message
         send_telegram_message(f"⚠️ *AI 분석 파싱 오류 발생*\n사유: `{str(e)}`\n현재 구간은 내부 룰 기반 폴백 모드로 진행합니다.")
 
-    # ── 공격적 내부 룰 기반 폴백 AI ──────────────────────────
+    # ── 보수적 내부 룰 기반 폴백 AI (Whipsaw 방어) ──────────────────────────
     macd_hist = macd.get("histogram", 0)
     macd_val = macd.get("macd", 0)
     macd_sig = macd.get("signal", 0)
     macd_golden = macd_val > macd_sig
     
-    # 적극 매수: RSI 45 이하이거나, 강세장 국면에서 MACD 양수 전환 시
-    if (rsi < 45 and macd_golden) or (regime.startswith("AGGRESSIVE") and macd_hist > 0):
+    # 강력 매수: 극단적 과매도 (RSI 30 이하 + 볼린저밴드 하단 이탈)
+    if rsi < 30 and bb_position_pct < 10 and macd_hist > macd_sig:
         return {
             "decision": "BUY",
-            "reason": f"RSI {rsi:.1f} 및 추세 확인. 적극적 진입으로 기회 포착.",
-            "confidence": 0.85,
-            "percentage": 50.0
-        }
-    # 단기 매수: 눌림목 판단
-    elif rsi < 55 and macd_hist > -1 and bb_position_pct < 45:
-        return {
-            "decision": "BUY",
-            "reason": "단기 눌림목 구간으로 판단되어 분할 매수 진입.",
-            "confidence": 0.70,
+            "reason": f"RSI {rsi:.1f} 극단적 과매도 및 하단 이탈. 단기 반등 노림.",
+            "confidence": 0.80,
             "percentage": 30.0
         }
-    # 추세 추종 매도: RSI가 매우 높거나 꺾일 때
-    elif rsi > 75 or (rsi > 65 and not macd_golden and bb_position_pct > 85):
+    # 추세 추종 매수: 확실한 강세장(정배열) + 골든크로스 + 눌림목
+    elif regime.startswith("AGGRESSIVE") and macd_golden and rsi < 60:
+        return {
+            "decision": "BUY",
+            "reason": "강세장 내 정배열 및 MACD 골든크로스 포착. 트렌드 팔로잉 진입.",
+            "confidence": 0.75,
+            "percentage": 30.0
+        }
+    # 리스크 관리 매도: 과열 또는 데드크로스
+    elif rsi > 70 or (rsi > 60 and not macd_golden and bb_position_pct > 80):
         return {
             "decision": "SELL",
-            "reason": f"RSI {rsi:.1f} 과열 및 저항선 도달. 수익 실현 후 재진입 노림.",
+            "reason": f"RSI {rsi:.1f} 과열 및 저항선 도달. 방어적 수익 실현.",
             "confidence": 0.80,
-            "percentage": 80.0
+            "percentage": 100.0
         }
-    # 관망 (범위 축소)
+    # 관망 (대부분의 시간)
     else:
         return {
             "decision": "HOLD",
-            "reason": "추세 확인 중. 공격적 진입을 위한 다음 타점 대기.",
+            "reason": "명확한 진입/청산 시그널 없음. 자산 방어를 위해 관망 대기.",
             "confidence": 0.50,
             "percentage": 0.0
         }

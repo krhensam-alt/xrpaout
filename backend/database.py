@@ -2,9 +2,10 @@ import sqlite3
 import os
 import json
 from datetime import datetime
+from config import config
 
-# DB 파일 경로 설정 (backend 폴더 내)
-DB_PATH = os.path.join(os.path.dirname(__file__), "trading_log.db")
+# DB 파일 경로 설정 (K8s 영구 저장소 연동)
+DB_PATH = config.DATABASE_PATH
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)

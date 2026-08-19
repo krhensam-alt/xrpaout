@@ -12,19 +12,24 @@ import sqlite3
 import os
 import json
 
-STATE_FILE = os.path.join(os.path.dirname(__file__), "trading_state.json")
+STATE_FILE = config.STATE_PATH
 
 def load_trading_state() -> dict:
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r") as f:
-                return json.load(f)
+                state = json.load(f)
+                if "highest_price_since_buy" not in state: state["highest_price_since_buy"] = 0.0
+                if "last_stop_loss_time" not in state: state["last_stop_loss_time"] = 0.0
+                return state
         except Exception:
             pass
-    return {"highest_price_since_buy": 0.0}
+    return {"highest_price_since_buy": 0.0, "last_stop_loss_time": 0.0}
 
-def save_trading_state(state: dict):
+def save_trading_state(new_state: dict):
     try:
+        state = load_trading_state()
+        state.update(new_state)
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=4)
     except Exception as e:
@@ -160,10 +165,13 @@ async def execute_trading_cycle(is_forced: bool = False):
                         "timestamp": datetime.now().isoformat()
                     })
                     
-                    # 상태 초기화
-                    save_trading_state({"highest_price_since_buy": 0.0})
+                    # 상태 초기화 및 쿨타임 기록
+                    new_state = {"highest_price_since_buy": 0.0}
+                    if "손절매" in sl_type:
+                        new_state["last_stop_loss_time"] = time.time()
+                    save_trading_state(new_state)
                     
-                await notify_subscribers("balance_update", exchange_client.get_balances())
+                    await notify_subscribers("balance_update", exchange_client.get_balances())
                 return
 
         # 3.2. 거래소 안전 예약 주문(안전장치) 실시간 점검 및 복구 로직
@@ -202,6 +210,15 @@ async def execute_trading_cycle(is_forced: bool = False):
         percentage = ai_res.get("percentage", 0.0)
         reason = ai_res.get("reason", "")
         
+        # 🚨 연속 손절매 방지 쿨타임 로직 (6시간)
+        state = load_trading_state()
+        last_sl_time = state.get("last_stop_loss_time", 0.0)
+        if decision == "BUY" and time.time() - last_sl_time < 6 * 3600:
+            print("⚠️ 손절매 이후 쿨타임(6시간)이 지나지 않아 매수를 보류합니다.")
+            decision = "HOLD"
+            reason = f"[쿨타임 적용] 최근 손절매 이후 안정화 대기 중. {reason}"
+            percentage = 0.0
+
         # 🚨 잔고 부족 시 매수 방지 로직 추가
         main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
         if decision == "BUY" and main_cash < MIN_ORDER_VALUE:

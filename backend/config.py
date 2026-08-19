@@ -22,6 +22,10 @@ class Config:
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     TELEGRAM_PROXY = os.getenv("TELEGRAM_PROXY", "").strip()
     
+    # 영구 저장소 경로 (K8s 연동)
+    DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", "trading_log.db"))
+    STATE_PATH = os.getenv("STATE_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "backend", "trading_state.json"))
+    
     # MOCK_MODE 설정 파싱
     _mock_env = os.getenv("MOCK_MODE", "True").lower()
     MOCK_MODE = _mock_env in ("true", "1", "yes", "t")
