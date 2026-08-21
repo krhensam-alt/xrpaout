@@ -14,8 +14,8 @@ kind: ConfigMap
 metadata:
   name: xrpaout-config
 data:
-  LM_STUDIO_BASE_URL: "http://192.168.0.18:1234/v1"
-  LM_STUDIO_MODEL: "gemma-2-2b-it"
+  LM_STUDIO_BASE_URL: "http://192.168.0.37:11434/v1"
+  LM_STUDIO_MODEL: "llama3.1:70b"
   SELECTED_EXCHANGE: "UPBIT"
   TRADING_INTERVAL_MINUTES: "60"
   MAX_INVESTMENT_KRW: "100000"

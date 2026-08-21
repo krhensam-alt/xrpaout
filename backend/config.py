@@ -12,8 +12,8 @@ class Config:
     BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY", "")
     SELECTED_EXCHANGE = os.getenv("SELECTED_EXCHANGE", "UPBIT").upper()
     
-    LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://localhost:1234/v1")
-    LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "local-model")
+    LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://192.168.0.37:11434/v1")
+    LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "llama3.1:70b")
     TRADING_INTERVAL_MINUTES = int(os.getenv("TRADING_INTERVAL_MINUTES", "10"))
     MAX_INVESTMENT_KRW = float(os.getenv("MAX_INVESTMENT_KRW", "100000"))
     
