@@ -95,7 +95,7 @@ async def poll_telegram_updates(on_command_cb):
                                     send_telegram_message("✅ *시스템 가동 중*\n현재 봇이 정상적으로 명령어를 수신하고 있습니다.")
                                     continue
                                     
-                                send_telegram_message("🚀 *강제 분석 사이클 요청을 확인했습니다.* 분석을 시작합니다...")
+                                # send_telegram_message("🚀 *강제 분석 사이클 요청을 확인했습니다.* 분석을 시작합니다...")
                                 await on_command_cb(is_forced=True)
                 
                 elif response.status == 401:

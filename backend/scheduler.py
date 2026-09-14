@@ -288,11 +288,11 @@ async def execute_trading_cycle(is_forced: bool = False):
                 safety_res = exchange_client.place_safety_orders(amount, price)
                 if safety_res.get("success"):
                     print(f"🛡️ 거래소 기반 안전 예약 주문 완료 (서버 중단 대비)")
-                    send_telegram_message(f"🛡️ *[안전장치 가동]*\n거래소 서버에 직접 예약 주문을 등록했습니다. 이제 서버가 중단되어도 목표가 도달 시 자동으로 매도됩니다.")
+                    # send_telegram_message(f"🛡️ *[안전장치 가동]*\n거래소 서버에 직접 예약 주문을 등록했습니다. 이제 서버가 중단되어도 목표가 도달 시 자동으로 매도됩니다.")
                 
-                # 주문 체결 텔레그램 알림
-                tg_trade = f"⚡ *[AI 자동 매매 체결 성공]*\n• 포지션: *{decision}*\n• 체결가: `{price:,.4f}` {PRICE_UNIT}\n• 수량: `{amount:,.4f}` XRP\n• 총액: `{total_krw:,.0f}` {CURRENCY_UNIT}\n• 근거 요약:\n_{reason}_"
-                send_telegram_message(tg_trade)
+                # 주문 체결 텔레그램 알림 (사용자 요청으로 생략)
+                # tg_trade = f"⚡ *[AI 자동 매매 체결 성공]*\n• 포지션: *{decision}*\n• 체결가: `{price:,.4f}` {PRICE_UNIT}\n• 수량: `{amount:,.4f}` XRP\n• 총액: `{total_krw:,.0f}` {CURRENCY_UNIT}\n• 근거 요약:\n_{reason}_"
+                # send_telegram_message(tg_trade)
                 
                 await notify_subscribers("new_trade", {
                     "decision": decision,
@@ -353,7 +353,7 @@ async def trailing_stop_monitor():
                             reason = f"트레일링 스탑 발동 (고점 {highest_price:,.2f} 대비 하락)"
                             save_trade_log("SELL", price, amount, total_krw, reason)
                             save_trading_state({"highest_price_since_buy": 0.0})
-                            send_telegram_message(f"🎯 *[트레일링 스탑 수익 실현]*\n• 매도가: `{price:,.4f}`\n• 수량: `{amount:,.4f}`\n• 수익 실현 완료!")
+                            # send_telegram_message(f"🎯 *[트레일링 스탑 수익 실현]*\n• 매도가: `{price:,.4f}`\n• 수량: `{amount:,.4f}`\n• 수익 실현 완료!")
                             
                             # 웹소켓 브로드캐스트
                             await notify_subscribers("new_trade", {
