@@ -243,6 +243,8 @@ async def execute_trading_cycle(is_forced: bool = False):
         # 텔레그램 정기 보고 (핵심 팩트만 간결하게)
         initial_krw = config.MAX_INVESTMENT_KRW
         total_val = balances.get("total_val", 0)
+        xrp_bal = balances.get("xrp", 0)
+        avg_buy = balances.get("avg_buy_price", 0)
         pnl_krw = total_val - initial_krw
         pnl_sign = "+" if pnl_krw > 0 else ""
         
@@ -251,6 +253,7 @@ async def execute_trading_cycle(is_forced: bool = False):
             f"• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n"
             f"• 총 자산: `{total_val:,.0f}` KRW\n"
             f"• 총 손익: `{pnl_sign}{pnl_krw:,.0f}` KRW\n"
+            f"• 보유 XRP: `{xrp_bal:,.2f}` XRP (평단: `{avg_buy:,.2f}`)\n"
             f"• AI 판단: *{decision}*"
         )
         send_telegram_message(tg_report)
