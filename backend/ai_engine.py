@@ -186,8 +186,8 @@ Return the JSON decision."""
     except Exception as e:
         print(f"LM Studio AI 질의 또는 파싱 최종 실패 (내부 룰 사용): {e}")
         # 오류 발생 시 텔레그램으로 즉시 알림 (중요 오류)
-        from telegram_notifier import send_telegram_message
-        send_telegram_message(f"⚠️ *AI 분석 파싱 오류 발생*\n사유: `{str(e)}`\n현재 구간은 내부 룰 기반 폴백 모드로 진행합니다.")
+        # from telegram_notifier import send_telegram_message
+        # send_telegram_message(f"⚠️ *AI 분석 파싱 오류 발생*\n사유: `{str(e)}`\n현재 구간은 내부 룰 기반 폴백 모드로 진행합니다.")
 
     # ── 보수적 내부 룰 기반 폴백 AI (Whipsaw 방어) ──────────────────────────
     macd_hist = macd.get("histogram", 0)

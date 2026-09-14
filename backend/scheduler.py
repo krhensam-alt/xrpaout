@@ -155,9 +155,9 @@ async def execute_trading_cycle(is_forced: bool = False):
                     exec_reason = f"[{sl_type} 집행] {trigger_reason}"
                     save_trade_log("SELL", current_price, xrp_amount, xrp_amount * current_price, exec_reason)
                     
-                    # 텔레그램 실시간 알림 발송
-                    tg_msg = f"🚨 *[{sl_type} 집행]*\n• 종목: XRP\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 매수평단: `{avg_buy_price:,.4f}` {PRICE_UNIT}\n• 최고수익률: *+{highest_profit_rate:.2f}%*\n• 현재수익률: *{current_profit_rate:+.2f}%*\n• 사유: {trigger_reason}"
-                    send_telegram_message(tg_msg)
+                    # 텔레그램 실시간 알림 발송 (사용자 요청으로 생략)
+                    # tg_msg = f"🚨 *[{sl_type} 집행]*\n• 종목: XRP\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 매수평단: `{avg_buy_price:,.4f}` {PRICE_UNIT}\n• 최고수익률: *+{highest_profit_rate:.2f}%*\n• 현재수익률: *{current_profit_rate:+.2f}%*\n• 사유: {trigger_reason}"
+                    # send_telegram_message(tg_msg)
                     
                     await notify_subscribers("new_trade", {
                         "decision": "SELL", "price": current_price, "amount": xrp_amount,
@@ -181,18 +181,18 @@ async def execute_trading_cycle(is_forced: bool = False):
                 safety_active = exchange_client.check_safety_orders(xrp_amount, avg_buy_price)
                 if not safety_active:
                     print("⚠️ 거래소 안전 예약 주문이 유실된 것을 감지했습니다. 재등록을 시도합니다.")
-                    send_telegram_message("⚠️ *[안전장치 유실 감지]*\n거래소에 직접 등록된 안전 예약 주문(지정가/OCO)이 유실된 것을 감지했습니다. 재등록을 진행합니다.")
+                    # send_telegram_message("⚠️ *[안전장치 유실 감지]*\n거래소에 직접 등록된 안전 예약 주문(지정가/OCO)이 유실된 것을 감지했습니다. 재등록을 진행합니다.")
                     
                     # 꼬임 방지를 위해 기존 미체결 주문 취소 후 재등록
                     exchange_client.cancel_all_orders()
                     safety_res = exchange_client.place_safety_orders(xrp_amount, avg_buy_price)
                     if safety_res.get("success"):
                         print("🛡️ 거래소 안전 예약 주문 재등록 완료")
-                        send_telegram_message("🛡️ *[안전장치 재가동 완료]*\n거래소 서버에 안전 예약 주문을 성공적으로 재등록했습니다.")
+                        # send_telegram_message("🛡️ *[안전장치 재가동 완료]*\n거래소 서버에 안전 예약 주문을 성공적으로 재등록했습니다.")
                     else:
                         err_reason = safety_res.get("reason", "알 수 없는 오류")
                         print(f"❌ 안전장치 재등록 실패: {err_reason}")
-                        send_telegram_message(f"❌ *[안전장치 재등록 실패]*\n사유: `{err_reason}`")
+                        # send_telegram_message(f"❌ *[안전장치 재등록 실패]*\n사유: `{err_reason}`")
                 else:
                     print("🛡️ 거래소 안전 예약 주문(안전장치)이 정상 작동 중입니다.")
             except Exception as safety_err:
