@@ -95,9 +95,9 @@ class BinanceClient:
                 xrp = 0.0
                 for balance in account['balances']:
                     if balance['asset'] == 'USDT':
-                        usdt = float(balance['free'])
+                        usdt = float(balance['free']) + float(balance.get('locked', 0))
                     elif balance['asset'] == 'XRP':
-                        xrp = float(balance['free'])
+                        xrp = float(balance['free']) + float(balance.get('locked', 0))
                 
                 # 평단가 조회 (바이낸스는 별도 로직 필요, 여기선 0으로 일단 처리)
                 avg_buy_price = 0.0 

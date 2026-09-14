@@ -87,9 +87,9 @@ class UpbitClient:
                 avg_buy_price = 0.0
                 for b in balances_list:
                     if b["currency"] == "KRW":
-                        krw = float(b["balance"])
+                        krw = float(b["balance"]) + float(b.get("locked", 0))
                     elif b["currency"] == "XRP":
-                        xrp = float(b["balance"])
+                        xrp = float(b["balance"]) + float(b.get("locked", 0))
                         avg_buy_price = float(b.get("avg_buy_price", 0.0))
                 return {
                     "krw": krw,
