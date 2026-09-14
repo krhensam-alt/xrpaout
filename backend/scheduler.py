@@ -240,8 +240,19 @@ async def execute_trading_cycle(is_forced: bool = False):
         # AI 리포트 DB 저장 (현재가 포함)
         save_ai_report(decision, confidence, percentage, reason, indicators, current_price)
         
-        # 텔레그램 정기 분석 리포트 발송 (매 주기마다 포지션 및 확신도 무관하게 항상 발송)
-        tg_report = f"🧠 *[XRP 퀀트 AI 판단 리포트]*\n• 전략 결정: *{decision}* (`{confidence*100:.0f}%` 확신)\n• 비중: `{percentage}%`\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 보조 지표: RSI `{indicators.get('rsi_14',50):.1f}`\n• 상세 사유:\n_{reason}_"
+        # 텔레그램 정기 보고 (핵심 팩트만 간결하게)
+        initial_krw = config.MAX_INVESTMENT_KRW
+        total_val = balances.get("total_val", 0)
+        pnl_krw = total_val - initial_krw
+        pnl_sign = "+" if pnl_krw > 0 else ""
+        
+        tg_report = (
+            f"📊 *[XRP 정기 보고]*\n"
+            f"• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n"
+            f"• 총 자산: `{total_val:,.0f}` KRW\n"
+            f"• 총 손익: `{pnl_sign}{pnl_krw:,.0f}` KRW\n"
+            f"• AI 판단: *{decision}*"
+        )
         send_telegram_message(tg_report)
             
         await notify_subscribers("new_report", {
