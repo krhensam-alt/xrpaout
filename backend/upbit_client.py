@@ -27,8 +27,8 @@ class UpbitClient:
         self.mock_avg_buy_price = 730.0
         self.last_price = 730.0
 
-    def get_ohlcv(self, interval="minute60", count=100) -> pd.DataFrame:
-        """캔들 데이터 조회 (수수료 절감 및 신뢰도 향상을 위해 60분봉 기본 조회)"""
+    def get_ohlcv(self, interval="minute15", count=100) -> pd.DataFrame:
+        """캔들 데이터 조회 (단기 스윙을 위해 15분봉 기본 조회)"""
         try:
             df = pyupbit.get_ohlcv("KRW-XRP", interval=interval, count=count)
             if df is not None and not df.empty:

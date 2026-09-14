@@ -319,6 +319,54 @@ async def execute_trading_cycle(is_forced: bool = False):
         traceback.print_exc()
         send_telegram_message(error_msg)
 
+async def trailing_stop_monitor():
+    """1분마다 가격을 확인하여 트레일링 스탑 적용"""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            state = load_trading_state()
+            balances = exchange_client.get_balances()
+            xrp_bal = balances.get("xrp", 0)
+            
+            if xrp_bal > 0:
+                current_price = exchange_client.get_current_price()
+                avg_buy_price = balances.get("avg_buy_price", 0)
+                highest_price = state.get("highest_price_since_buy", 0)
+                
+                if current_price > highest_price:
+                    highest_price = current_price
+                    state["highest_price_since_buy"] = highest_price
+                    save_trading_state(state)
+                    
+                # 수익권 진입 후 (예: 평단가 대비 1.5% 상승 시 트레일링 활성화)
+                if highest_price > avg_buy_price * 1.015:
+                    # 최고점 대비 1% 하락 시 익절
+                    trigger_price = highest_price * 0.99
+                    if current_price <= trigger_price:
+                        print(f"🎯 트레일링 스탑 발동! 최고점({highest_price}) 대비 하락. 익절 매도 진행.")
+                        # 전량 매도 실행
+                        order_res = exchange_client.execute_order("SELL", 100.0)
+                        if order_res.get("success"):
+                            price = order_res.get("price", current_price)
+                            amount = order_res.get("amount", xrp_bal)
+                            total_krw = order_res.get("total_krw", price * amount)
+                            reason = f"트레일링 스탑 발동 (고점 {highest_price:,.2f} 대비 하락)"
+                            save_trade_log("SELL", price, amount, total_krw, reason)
+                            save_trading_state({"highest_price_since_buy": 0.0})
+                            send_telegram_message(f"🎯 *[트레일링 스탑 수익 실현]*\n• 매도가: `{price:,.4f}`\n• 수량: `{amount:,.4f}`\n• 수익 실현 완료!")
+                            
+                            # 웹소켓 브로드캐스트
+                            await notify_subscribers("new_trade", {
+                                "decision": "SELL",
+                                "price": price,
+                                "amount": amount,
+                                "total_krw": total_krw,
+                                "reason": reason,
+                                "timestamp": datetime.now().isoformat()
+                            })
+        except Exception as e:
+            print(f"Trailing Stop 오류: {e}")
+
 async def start_scheduler():
     """백그라운드 주기적 실행 루프 (정각/배수 시간 정렬)"""
     interval_minutes = config.TRADING_INTERVAL_MINUTES
@@ -326,10 +374,13 @@ async def start_scheduler():
     # 서버 기동 직후 즉시 1회 실행하여 DB 및 화면 초기 데이터 확보
     await execute_trading_cycle()
     
+    # 트레일링 스탑 모니터 시작 (백그라운드 루프)
+    asyncio.create_task(trailing_stop_monitor())
+    
     while True:
         # 현재 시간 기준으로 다음 정렬된 시간까지 대기
         now = datetime.now()
-        # 다음 실행 시간 계산 (예: 60분 간격이면 다음 00분, 10분 간격이면 다음 10, 20, ... 분)
+        # 다음 실행 시간 계산 (예: 60분 간격이면 다음 00분, 15분 간격이면 다음 15, 30, 45, 00분)
         minutes_to_wait = interval_minutes - (now.minute % interval_minutes)
         seconds_to_wait = (minutes_to_wait * 60) - now.second
         

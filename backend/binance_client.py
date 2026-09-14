@@ -31,8 +31,8 @@ class BinanceClient:
         self.mock_avg_buy_price = 0.5 # USDT 기준
         self.last_price = 0.5
 
-    def get_ohlcv(self, interval="1h", count=100) -> pd.DataFrame:
-        """캔들 데이터 조회 (Binance 형식: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d)"""
+    def get_ohlcv(self, interval="15m", count=100) -> pd.DataFrame:
+        """캔들 데이터 조회 (단기 스윙을 위해 15분봉 기본 조회)"""
         # Upbit "minute60" -> Binance "1h" 매핑
         if interval == "minute60": interval = "1h"
         
