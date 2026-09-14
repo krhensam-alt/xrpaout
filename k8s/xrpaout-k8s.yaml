@@ -21,6 +21,7 @@ data:
   MAX_INVESTMENT_KRW: "100000"
   MOCK_MODE: "False"
   DATABASE_PATH: "/app/data/trading_log.db"
+  STATE_PATH: "/app/data/trading_state.json"
 ---
 apiVersion: v1
 kind: Secret
