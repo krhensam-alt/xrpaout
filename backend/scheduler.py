@@ -241,19 +241,23 @@ async def execute_trading_cycle(is_forced: bool = False):
         save_ai_report(decision, confidence, percentage, reason, indicators, current_price)
         
         # 텔레그램 정기 보고 (핵심 팩트만 간결하게)
-        initial_krw = config.MAX_INVESTMENT_KRW
+        state = load_trading_state()
+        initial_krw = state.get("investment_base", float(config.MAX_INVESTMENT_KRW))
         total_val = balances.get("total_val", 0)
+        krw_bal = balances.get("krw", 0)
         xrp_bal = balances.get("xrp", 0)
         avg_buy = balances.get("avg_buy_price", 0)
+        
         pnl_krw = total_val - initial_krw
         pnl_sign = "+" if pnl_krw > 0 else ""
+        pnl_percent = (pnl_krw / initial_krw * 100) if initial_krw > 0 else 0
         
         tg_report = (
             f"📊 *[XRP 정기 보고]*\n"
-            f"• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n"
-            f"• 총 자산: `{total_val:,.0f}` KRW\n"
-            f"• 총 손익: `{pnl_sign}{pnl_krw:,.0f}` KRW\n"
-            f"• 보유 XRP: `{xrp_bal:,.2f}` XRP (평단: `{avg_buy:,.2f}`)\n"
+            f"• 원금: `{initial_krw:,.0f}` KRW\n"
+            f"• 자산: `{total_val:,.0f}` KRW (KRW:`{krw_bal:,.0f}`)\n"
+            f"• 손익: *{pnl_sign}{pnl_krw:,.0f} KRW* ({pnl_sign}{pnl_percent:.2f}%)\n"
+            f"• XRP: `{xrp_bal:,.2f}` 개 (평단: `{avg_buy:,.2f}`)\n"
             f"• AI 판단: *{decision}*"
         )
         send_telegram_message(tg_report)

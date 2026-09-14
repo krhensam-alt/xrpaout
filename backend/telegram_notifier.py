@@ -90,7 +90,23 @@ async def poll_telegram_updates(on_command_cb):
 
                         # 보안: 등록된 CHAT_ID만 처리
                         if chat_id == str(config.TELEGRAM_CHAT_ID):
-                            if text in ["분석", "/analyze", "강제분석", "status", "/status"]:
+                            if text.startswith("투자금 "):
+                                try:
+                                    amount = float(text.replace("투자금", "").strip().replace(",", ""))
+                                    import json, os
+                                    state = {}
+                                    if os.path.exists(config.STATE_PATH):
+                                        try:
+                                            with open(config.STATE_PATH, "r") as f:
+                                                state = json.load(f)
+                                        except: pass
+                                    state["investment_base"] = amount
+                                    with open(config.STATE_PATH, "w") as f:
+                                        json.dump(state, f)
+                                    send_telegram_message(f"✅ 원금이 `{amount:,.0f}` KRW로 설정되었습니다.\n다음 보고부터 이 금액을 기준으로 손익을 계산합니다.")
+                                except Exception as e:
+                                    send_telegram_message("❌ 원금 설정 실패. 형식: `투자금 100000`")
+                            elif text in ["분석", "/analyze", "강제분석", "status", "/status"]:
                                 if text in ["status", "/status"]:
                                     send_telegram_message("✅ *시스템 가동 중*\n현재 봇이 정상적으로 명령어를 수신하고 있습니다.")
                                     continue
