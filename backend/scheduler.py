@@ -210,11 +210,11 @@ async def execute_trading_cycle(is_forced: bool = False):
         percentage = ai_res.get("percentage", 0.0)
         reason = ai_res.get("reason", "")
         
-        # 🚨 연속 손절매 방지 쿨타임 로직 (6시간)
+        # 🚨 연속 손절매 방지 쿨타임 로직 (2시간으로 단축하여 기회 창출)
         state = load_trading_state()
         last_sl_time = state.get("last_stop_loss_time", 0.0)
-        if decision == "BUY" and time.time() - last_sl_time < 6 * 3600:
-            print("⚠️ 손절매 이후 쿨타임(6시간)이 지나지 않아 매수를 보류합니다.")
+        if decision == "BUY" and time.time() - last_sl_time < 2 * 3600:
+            print("⚠️ 손절매 이후 쿨타임(2시간)이 지나지 않아 매수를 보류합니다.")
             decision = "HOLD"
             reason = f"[쿨타임 적용] 최근 손절매 이후 안정화 대기 중. {reason}"
             percentage = 0.0

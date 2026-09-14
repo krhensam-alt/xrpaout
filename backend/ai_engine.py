@@ -195,16 +195,16 @@ Return the JSON decision."""
     macd_sig = macd.get("signal", 0)
     macd_golden = macd_val > macd_sig
     
-    # 강력 매수: 극단적 과매도 (RSI 30 이하 + 볼린저밴드 하단 이탈)
-    if rsi < 30 and bb_position_pct < 10 and macd_hist > macd_sig:
+    # 단기 반등 스윙 매수 (RSI 40 이하 + 골든크로스)
+    if rsi < 40 and macd_hist > macd_sig:
         return {
             "decision": "BUY",
-            "reason": f"RSI {rsi:.1f} 극단적 과매도 및 하단 이탈. 단기 반등 노림.",
-            "confidence": 0.80,
+            "reason": f"RSI {rsi:.1f} 단기 과매도 구간에서 반등 시그널 포착. 소액 수익 노림.",
+            "confidence": 0.75,
             "percentage": 30.0
         }
-    # 추세 추종 매수: 확실한 강세장(정배열) + 골든크로스 + 눌림목
-    elif regime.startswith("AGGRESSIVE") and macd_golden and rsi < 60:
+    # 추세 추종 매수: 강세장(정배열) + 골든크로스 + 눌림목
+    elif regime.startswith("AGGRESSIVE") and macd_golden and rsi < 65:
         return {
             "decision": "BUY",
             "reason": "강세장 내 정배열 및 MACD 골든크로스 포착. 트렌드 팔로잉 진입.",
