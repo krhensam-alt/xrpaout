@@ -84,6 +84,30 @@ class BinanceClient:
         self.last_price += self.last_price * np.random.uniform(-0.002, 0.002)
         return self.last_price
 
+    def get_orderbook_imbalance(self) -> dict:
+        """호가창 매수/매도 잔량 불균형(고래 매수세) 분석"""
+        if self.is_mock:
+            return {"bid_ask_ratio": 1.0, "strong_buy_wall": False, "strong_sell_wall": False}
+        
+        try:
+            depth = self.client.get_order_book(symbol="XRPUSDT", limit=100)
+            total_bid = sum([float(b[1]) for b in depth['bids']])
+            total_ask = sum([float(a[1]) for a in depth['asks']])
+            
+            if total_ask == 0:
+                ratio = 1.0
+            else:
+                ratio = total_bid / total_ask
+                
+            return {
+                "bid_ask_ratio": round(ratio, 2),
+                "strong_buy_wall": ratio > 1.5,
+                "strong_sell_wall": ratio < 0.6,
+            }
+        except Exception as e:
+            print(f"호가창 조회 실패: {e}")
+            return {"bid_ask_ratio": 1.0, "strong_buy_wall": False, "strong_sell_wall": False}
+
     def get_balances(self) -> dict:
         """계좌 잔고 조회 (Binance는 USDT 기준)"""
         current_price = self.get_current_price()

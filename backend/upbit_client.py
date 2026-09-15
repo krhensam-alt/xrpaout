@@ -69,6 +69,36 @@ class UpbitClient:
         self.last_price += self.last_price * np.random.uniform(-0.002, 0.002)
         return self.last_price
 
+    def get_orderbook_imbalance(self) -> dict:
+        """호가창 매수/매도 잔량 불균형(고래 매수세) 분석"""
+        if self.is_mock:
+            return {"bid_ask_ratio": 1.0, "strong_buy_wall": False, "strong_sell_wall": False}
+        
+        try:
+            ob = pyupbit.get_orderbook("KRW-XRP")
+            if not ob:
+                return {"bid_ask_ratio": 1.0, "strong_buy_wall": False, "strong_sell_wall": False}
+                
+            if isinstance(ob, list):
+                ob = ob[0]
+                
+            total_ask = float(ob.get("total_ask_size", 0))
+            total_bid = float(ob.get("total_bid_size", 0))
+            
+            if total_ask == 0:
+                ratio = 1.0
+            else:
+                ratio = total_bid / total_ask
+                
+            return {
+                "bid_ask_ratio": round(ratio, 2),
+                "strong_buy_wall": ratio > 1.5,
+                "strong_sell_wall": ratio < 0.6,
+            }
+        except Exception as e:
+            print(f"호가창 조회 실패: {e}")
+            return {"bid_ask_ratio": 1.0, "strong_buy_wall": False, "strong_sell_wall": False}
+
     def get_balances(self) -> dict:
         """계좌 잔고 및 매수 평단가, 거시 지표 조회"""
         current_price = self.get_current_price()

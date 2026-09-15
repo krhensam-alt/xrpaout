@@ -94,6 +94,10 @@ Market Regime: {regime}
 
 Example: {{"decision": "BUY", "reason": "RSI 과매도 및 반등 시그널 포착.", "confidence": 0.85, "percentage": 50}}"""
 
+    ob_info = indicators.get("orderbook_imbalance", {})
+    bid_ask_ratio = ob_info.get("bid_ask_ratio", 1.0)
+    strong_buy_wall = ob_info.get("strong_buy_wall", False)
+    
     user_prompt = f"""Market Data:
 - Price: {current_price:,.4f} {PRICE_UNIT}
 - RSI: {rsi:.1f}
@@ -101,6 +105,8 @@ Example: {{"decision": "BUY", "reason": "RSI 과매도 및 반등 시그널 포�
 - BB Position: {bb_position_pct:.1f}%
 - MAs: MA5:{ma5:,.4f} / MA20:{ma20:,.4f} / MA60:{ma60:,.4f}
 - Regime: {regime}
+- Orderbook Bid/Ask Ratio: {bid_ask_ratio:.2f} (If > 1.5, implies strong buy walls / whale accumulation)
+- Whale Accumulation Detected: {strong_buy_wall}
 
 Assets (For Portfolio Context Only):
 - Value: {total_val:,.0f} KRW (Profit: {profit_rate:+.2f}%)
@@ -202,6 +208,14 @@ Return the JSON decision."""
             "reason": f"RSI {rsi:.1f} 단기 과매도 구간에서 반등 시그널 포착. 소액 수익 노림.",
             "confidence": 0.75,
             "percentage": 30.0
+        }
+    # 고래 매수벽(오더북 불균형) 감지 시 선제적 진입
+    elif strong_buy_wall and rsi < 60:
+        return {
+            "decision": "BUY",
+            "reason": f"호가창 강력한 매수벽(고래 진입) 감지 (비율: {bid_ask_ratio:.2f}). 선제적 매수 진입.",
+            "confidence": 0.85,
+            "percentage": 40.0
         }
     # 추세 추종 매수: 강세장(정배열) + 골든크로스 + 눌림목
     elif regime.startswith("AGGRESSIVE") and macd_golden and rsi < 65:

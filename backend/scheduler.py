@@ -202,6 +202,11 @@ async def execute_trading_cycle(is_forced: bool = False):
         await evaluate_past_reports(current_price)
         experiences = get_ai_experiences(limit=5)
 
+        # 3.6. 고래 매수세/호가창 불균형 데이터 수집
+        print("고래 움직임(호가창 불균형) 데이터 수집 중...")
+        ob_imbalance = exchange_client.get_orderbook_imbalance()
+        indicators["orderbook_imbalance"] = ob_imbalance
+
         # 4. AI 의사결정 질의 (경험 데이터 주입)
         print("AI 의사결정 질의 중 (경험 기반 학습 적용)...")
         ai_res = query_ai_decision(indicators, balances, experiences)
