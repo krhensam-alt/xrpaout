@@ -160,7 +160,8 @@ class UpbitClient:
             else:
                 free_krw = self.mock_krw
                 
-            target_krw = free_krw * (percentage / 100.0)
+            # 수수료(0.05%)를 고려하여 실제 주문 가능 금액을 99.95%로 조정
+            target_krw = free_krw * (percentage / 100.0) * 0.9995
             if target_krw < 5000:
                 return {"success": False, "reason": "최소 매수 금액(5000원) 미달"}
                 
@@ -168,6 +169,9 @@ class UpbitClient:
             if not self.is_mock:
                 try:
                     res = self.upbit.buy_market_order("KRW-XRP", target_krw)
+                    if res is None or "error" in res:
+                        err_msg = res["error"]["message"] if res and "error" in res else "Unknown Error (None returned)"
+                        return {"success": False, "reason": err_msg}
                     return {"success": True, "result": res, "price": price, "amount": amount_to_buy, "total_krw": target_krw}
                 except Exception as e:
                     return {"success": False, "reason": str(e)}
@@ -208,6 +212,9 @@ class UpbitClient:
             if not self.is_mock:
                 try:
                     res = self.upbit.sell_market_order("KRW-XRP", target_xrp)
+                    if res is None or (isinstance(res, dict) and "error" in res):
+                        err_msg = res["error"]["message"] if isinstance(res, dict) and "error" in res else "Unknown Error (None returned)"
+                        return {"success": False, "reason": err_msg}
                     return {"success": True, "result": res, "price": price, "amount": target_xrp, "total_krw": target_krw}
                 except Exception as e:
                     return {"success": False, "reason": str(e)}
