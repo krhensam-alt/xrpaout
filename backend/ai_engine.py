@@ -98,6 +98,10 @@ Example: {{"decision": "BUY", "reason": "RSI 과매도 및 반등 시그널 포�
     bid_ask_ratio = ob_info.get("bid_ask_ratio", 1.0)
     strong_buy_wall = ob_info.get("strong_buy_wall", False)
     
+    vol_info = indicators.get("volume_trend", {})
+    is_vol_spike = vol_info.get("is_volume_spike", False)
+    vol_ratio = vol_info.get("vol_ratio", 1.0)
+    
     user_prompt = f"""Market Data:
 - Price: {current_price:,.4f} {PRICE_UNIT}
 - RSI: {rsi:.1f}
@@ -105,8 +109,9 @@ Example: {{"decision": "BUY", "reason": "RSI 과매도 및 반등 시그널 포�
 - BB Position: {bb_position_pct:.1f}%
 - MAs: MA5:{ma5:,.4f} / MA20:{ma20:,.4f} / MA60:{ma60:,.4f}
 - Regime: {regime}
-- Orderbook Bid/Ask Ratio: {bid_ask_ratio:.2f} (If > 1.5, implies strong buy walls / whale accumulation)
-- Whale Accumulation Detected: {strong_buy_wall}
+- Orderbook Bid/Ask Ratio: {bid_ask_ratio:.2f} (If > 1.5, implies strong buy walls)
+- Volume Spike: {is_vol_spike} (Ratio: {vol_ratio:.2f}x)
+- Whale Behavior: If strong buy walls exist BUT Volume is NOT spiking, it is likely a spoof (fake wall to trap retail). If BOTH are true, it's real accumulation.
 
 Assets (For Portfolio Context Only):
 - Value: {total_val:,.0f} KRW (Profit: {profit_rate:+.2f}%)
@@ -209,13 +214,21 @@ Return the JSON decision."""
             "confidence": 0.75,
             "percentage": 30.0
         }
-    # 고래 매수벽(오더북 불균형) 감지 시 선제적 진입
-    elif strong_buy_wall and rsi < 60:
+    # 고래 매수벽(오더북 불균형) + 실제 거래량 급증 동반 시에만 진짜 세력으로 간주
+    elif strong_buy_wall and is_vol_spike and rsi < 60:
         return {
             "decision": "BUY",
-            "reason": f"호가창 강력한 매수벽(고래 진입) 감지 (비율: {bid_ask_ratio:.2f}). 선제적 매수 진입.",
+            "reason": f"호가창 강력한 매수벽(비율: {bid_ask_ratio:.2f})과 거래량 급증({vol_ratio:.2f}x) 동시 감지. 진짜 세력 진입으로 판단, 선제적 매수.",
             "confidence": 0.85,
             "percentage": 40.0
+        }
+    # 허매수(Spoofing) 덫 회피: 매수벽은 두꺼운데 거래량이 없고 RSI가 높으면 함정일 확률 높음
+    elif strong_buy_wall and not is_vol_spike and rsi > 65:
+        return {
+            "decision": "SELL",
+            "reason": f"매수벽은 두껍지만 거래량이 수반되지 않는 허매수(Spoofing) 함정 징후 감지. 리스크 회피 매도.",
+            "confidence": 0.80,
+            "percentage": 100.0
         }
     # 추세 추종 매수: 강세장(정배열) + 골든크로스 + 눌림목
     elif regime.startswith("AGGRESSIVE") and macd_golden and rsi < 65:
