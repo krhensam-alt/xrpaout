@@ -144,10 +144,23 @@ class UpbitClient:
     def execute_order(self, decision: str, percentage: float) -> dict:
         """주문 실행 (매수/매도)"""
         price = self.get_current_price()
-        balances = self.get_balances()
         
         if decision == "BUY":
-            target_krw = balances["krw"] * (percentage / 100.0)
+            # 매수 시에는 locked가 아닌 free 잔고만 사용
+            if not self.is_mock:
+                try:
+                    balances_list = self.upbit.get_balances()
+                    free_krw = 0.0
+                    for b in balances_list:
+                        if b["currency"] == "KRW":
+                            free_krw = float(b["balance"])  # locked 제외한 순수 사용 가능 금액
+                            break
+                except Exception:
+                    free_krw = 0.0
+            else:
+                free_krw = self.mock_krw
+                
+            target_krw = free_krw * (percentage / 100.0)
             if target_krw < 5000:
                 return {"success": False, "reason": "최소 매수 금액(5000원) 미달"}
                 
@@ -168,10 +181,26 @@ class UpbitClient:
                 return {"success": True, "result": "MOCK_BUY_SUCCESS", "price": price, "amount": amount_to_buy, "total_krw": target_krw}
                 
         elif decision == "SELL":
-            # 매도 전 예약된 안전 매도 주문 취소
+            # 매도 전 ALL 예약 주문 취소 (locked XRP 해방)
             self.cancel_all_orders()
             
-            target_xrp = balances["xrp"] * (percentage / 100.0)
+            # 매도 시에는 free 잔고만 사용 (cancel 후 다시 조회해야 최신 free 반영)
+            if not self.is_mock:
+                try:
+                    import time
+                    time.sleep(0.3)  # 주문 취소 반영 대기
+                    balances_list = self.upbit.get_balances()
+                    free_xrp = 0.0
+                    for b in balances_list:
+                        if b["currency"] == "XRP":
+                            free_xrp = float(b["balance"])
+                            break
+                except Exception:
+                    free_xrp = 0.0
+            else:
+                free_xrp = self.mock_xrp
+            
+            target_xrp = free_xrp * (percentage / 100.0)
             target_krw = target_xrp * price
             if target_krw < 5000:
                 return {"success": False, "reason": "최소 매도 금액(5000원 상당) 미달"}
@@ -190,13 +219,12 @@ class UpbitClient:
         return {"success": False, "reason": "의사결정이 HOLD이거나 유효하지 않음"}
 
     def cancel_all_orders(self):
-        """대기 중인 매도 주문 모두 취소"""
+        """대기 중인 모든 주문(매수+매도) 취소"""
         if self.is_mock: return True
         try:
             orders = self.upbit.get_order("KRW-XRP", state="wait")
             for order in orders:
-                if order['side'] == 'ask': # 매도 주문만 취소
-                    self.upbit.cancel_order(order['uuid'])
+                self.upbit.cancel_order(order['uuid'])
             return True
         except Exception as e:
             print(f"업비트 주문 취소 실패: {e}")

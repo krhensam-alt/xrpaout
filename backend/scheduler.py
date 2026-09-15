@@ -385,8 +385,12 @@ async def trailing_stop_monitor():
                             total_krw = order_res.get("total_krw", price * amount)
                             reason = f"트레일링 스탑 발동 (고점 {highest_price:,.2f} 대비 하락)"
                             save_trade_log("SELL", price, amount, total_krw, reason)
-                            save_trading_state({"highest_price_since_buy": 0.0})
-                            # send_telegram_message(f"🎯 *[트레일링 스탑 수익 실현]*\n• 매도가: `{price:,.4f}`\n• 수량: `{amount:,.4f}`\n• 수익 실현 완료!")
+                            
+                            # 익절 시 연속 손절 카운트 초기화
+                            new_state = state.copy()
+                            new_state["highest_price_since_buy"] = 0.0
+                            new_state["consecutive_losses"] = 0
+                            save_trading_state(new_state)
                             
                             # 웹소켓 브로드캐스트
                             await notify_subscribers("new_trade", {
