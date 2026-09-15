@@ -44,8 +44,9 @@ def run_backtest(days_back=365):
     df['rsi_14'] = calculate_rsi(df) # 이렇게 하면 전체 시리즈가 아니므로 루프를 돌아야 함
     
     # 단순화를 위해 빈 컬럼 생성
-    for col in ['rsi_14', 'macd_hist', 'macd_val', 'macd_sig', 'atr_14', 'ma5', 'ma20', 'ma60', 'regime']:
+    for col in ['rsi_14', 'macd_hist', 'macd_val', 'macd_sig', 'atr_14', 'ma5', 'ma20', 'ma60']:
         df[col] = 0.0
+    df['regime'] = "NONE"
         
     print("지표 계산 중 (루프)...")
     for i in range(120, len(df)):

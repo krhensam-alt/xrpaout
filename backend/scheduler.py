@@ -256,8 +256,10 @@ async def execute_trading_cycle(is_forced: bool = False):
             main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
             risk_tolerance = main_cash * 0.01 # 총 가용 현금의 1%를 최대 손실로 고정
             
+            # 튜닝된 손절 비율 사용 (기본 1.5)
+            optim_sl = state.get("optim_stop_loss", 1.5)
             atr_val = indicators.get("atr_14", current_price * 0.02)
-            stop_loss_pct = (1.5 * atr_val) / current_price
+            stop_loss_pct = (optim_sl * atr_val) / current_price
             
             if stop_loss_pct > 0:
                 target_krw = risk_tolerance / stop_loss_pct
@@ -310,6 +312,14 @@ async def execute_trading_cycle(is_forced: bool = False):
             decision = "HOLD"
             reason = f"[일일 손실 차단] 당일 누적 손실 {daily_pnl_pct:.2f}%로 -4% 한도 초과"
             percentage = 0.0
+            
+            # 일일 손실 한도 도달 시에도 튜닝 트리거
+            last_tuning = state.get("last_tuning_time", 0)
+            # 하루에 한 번만 실행되도록 제한 (너무 잦은 실행 방지)
+            if time.time() - last_tuning > 12 * 3600:
+                print("🛑 일일 손실 방어망 작동. Auto-Tuning을 시작합니다.")
+                from auto_optimizer import run_auto_optimization
+                asyncio.create_task(run_auto_optimization())
         elif decision == "BUY" and main_cash < MIN_ORDER_VALUE:
             print(f"⚠️ 잔고 부족({main_cash:,.0f} {PRICE_UNIT})으로 인해 매수 결정을 HOLD로 전환합니다.")
             decision = "HOLD"
@@ -445,39 +455,62 @@ async def trailing_stop_monitor():
                     state["highest_price_since_buy"] = highest_price
                     save_trading_state(state)
                     
-                ATR_TRAILING_START = 1.5
-                ATR_TRAILING_DROP = 0.75
+                # 자가 튜닝된 파라미터 로드
+                ATR_TRAILING_START = state.get("optim_trailing_start", 1.5)
+                ATR_TRAILING_DROP = state.get("optim_trailing_drop", 0.75)
+                ATR_STOP_LOSS = state.get("optim_stop_loss", 1.5)
                 
-                # 수익권 진입 후 (예: 평단가 대비 1.5 ATR 상승 시 트레일링 활성화)
+                # 손절 라인 및 트레일링 익절 라인 동시 계산
+                trailing_sl_price = entry_price - (ATR_STOP_LOSS * entry_atr) # 기본 손절 라인
+                
+                # 최고가가 트레일링 시작점을 넘었다면, 트레일링 익절 라인으로 업데이트
                 if highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
-                    # 최고점 대비 0.75 ATR 하락 시 익절
-                    trigger_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
-                    if current_price <= trigger_price:
-                        print(f"🎯 트레일링 스탑 발동! 최고점({highest_price}) 대비 하락. 익절 매도 진행.")
-                        # 전량 매도 실행
-                        order_res = exchange_client.execute_order("SELL", 100.0)
-                        if order_res.get("success"):
-                            price = order_res.get("price", current_price)
-                            amount = order_res.get("amount", xrp_bal)
-                            total_krw = order_res.get("total_krw", price * amount)
-                            reason = f"트레일링 스탑 발동 (고점 {highest_price:,.2f} 대비 하락)"
-                            save_trade_log("SELL", price, amount, total_krw, reason)
+                    trailing_sl_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
+                    
+                # 현재가가 손절/익절 라인 아래로 떨어졌는지 확인
+                if current_price <= trailing_sl_price:
+                    is_stop_loss = current_price < entry_price
+                    action_name = "손절매" if is_stop_loss else "트레일링 익절"
+                    print(f"🎯 {action_name} 발동! 기준가({trailing_sl_price:,.2f}) 이탈. 전량 매도 진행.")
+                    
+                    # 전량 매도 실행
+                    order_res = exchange_client.execute_order("SELL", 100.0)
+                    if order_res.get("success"):
+                        price = order_res.get("price", current_price)
+                        amount = order_res.get("amount", xrp_bal)
+                        total_krw = order_res.get("total_krw", price * amount)
+                        reason = f"{action_name} 발동 (고점 {highest_price:,.2f}, 하락 이탈)"
+                        save_trade_log("SELL", price, amount, total_krw, reason)
+                        
+                        new_state = state.copy()
+                        new_state["highest_price_since_buy"] = 0.0
+                        
+                        if is_stop_loss:
+                            consecutive = new_state.get("consecutive_losses", 0) + 1
+                            new_state["consecutive_losses"] = consecutive
+                            new_state["last_stop_loss_time"] = time.time()
                             
-                            # 익절 시 연속 손절 카운트 초기화
-                            new_state = state.copy()
-                            new_state["highest_price_since_buy"] = 0.0
+                            # 🚨 킬스위치 도달 시 Auto-Tuning 발동
+                            if consecutive >= 3:
+                                new_state["kill_switch_until"] = time.time() + (24 * 3600)
+                                print("🚨 킬스위치 발동. Auto-Tuning을 시작합니다.")
+                                from auto_optimizer import run_auto_optimization
+                                asyncio.create_task(run_auto_optimization())
+                        else:
                             new_state["consecutive_losses"] = 0
-                            save_trading_state(new_state)
                             
-                            # 웹소켓 브로드캐스트
-                            await notify_subscribers("new_trade", {
-                                "decision": "SELL",
-                                "price": price,
-                                "amount": amount,
-                                "total_krw": total_krw,
-                                "reason": reason,
-                                "timestamp": datetime.now().isoformat()
-                            })
+                        save_trading_state(new_state)
+                        
+                        # 웹소켓 브로드캐스트
+                        await notify_subscribers("new_trade", {
+                            "decision": "SELL",
+                            "price": price,
+                            "amount": amount,
+                            "total_krw": total_krw,
+                            "reason": reason,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        print(f"주문 체결 성공: SELL | 수량: {amount:.4f} | 총액: {total_krw:.0f}{CURRENCY_UNIT}")
         except Exception as e:
             print(f"Trailing Stop 오류: {e}")
 
