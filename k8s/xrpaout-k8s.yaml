@@ -29,10 +29,10 @@ metadata:
   name: xrpaout-secret
 type: Opaque
 data:
-  UPBIT_ACCESS_KEY: "VW0yWjROcE5pbldteGdWZXpHcjlyVjlXUFg3b3l1T2wwbUx4UENZaw=="
-  UPBIT_SECRET_KEY: "R1NBQlFac1pEb2doUnNFaU9QTVYzNTlLZnhiWXhVV2R4N3hNTjNjMg=="
-  TELEGRAM_BOT_TOKEN: "ODgxNjQzMjkxMjpBQUc2eHZfaWVRYkZIYVBXVnZ5OE1id25mQzNjaG5YMjR2bw=="
-  TELEGRAM_CHAT_ID: "Njc3OTU3MjA4OA=="
+  UPBIT_ACCESS_KEY: "CHANGE_ME_BASE64" # [!] 보안 경고: 새 키를 발급받아 다시 넣으세요.
+  UPBIT_SECRET_KEY: "CHANGE_ME_BASE64"
+  TELEGRAM_BOT_TOKEN: "CHANGE_ME_BASE64"
+  TELEGRAM_CHAT_ID: "CHANGE_ME_BASE64"
 ---
 apiVersion: apps/v1
 kind: Deployment

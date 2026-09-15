@@ -1,7 +1,7 @@
 import asyncio
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import config
 from exchange import exchange_client, CURRENCY_UNIT, PRICE_UNIT, MIN_ORDER_VALUE
 from indicators import get_all_indicators
@@ -28,10 +28,8 @@ def load_trading_state() -> dict:
 
 def save_trading_state(new_state: dict):
     try:
-        state = load_trading_state()
-        state.update(new_state)
         with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=4)
+            json.dump(new_state, f, indent=4)
     except Exception as e:
         print(f"상태 파일 저장 오류: {e}")
 
@@ -58,13 +56,14 @@ async def evaluate_past_reports(current_price: float):
         conn = get_db_connection()
         cursor = conn.cursor()
         # 아직 평가되지 않았고, 55분 이상 경과한 리포트 조회 (이전 시간 분석 결과를 다음 시간 분석 시점에 바로 경험으로 활용)
+        cutoff_time = (datetime.utcnow() - timedelta(minutes=55)).isoformat()
         cursor.execute("""
             SELECT id, decision, price_at_decision, timestamp 
             FROM ai_reports 
             WHERE outcome_status IS NULL 
-            AND timestamp < datetime('now', '-55 minutes')
+            AND timestamp < ?
             ORDER BY id DESC LIMIT 20
-        """)
+        """, (cutoff_time,))
         pending_reports = cursor.fetchall()
         conn.close()
 
@@ -111,12 +110,12 @@ async def execute_trading_cycle(is_forced: bool = False):
         current_price = indicators.get("current_price", 0.0)
         xrp_amount = balances.get("xrp", 0.0)
 
-        # 🚨 최우선 기계적 리스크 관리 필터 (ATR 기반 청산 로직)
+        # 🚨 글로벌 State 로드 (UnboundLocalError 방지)
+        state = load_trading_state()
+
+        # 최고가 상태 관리 (보유 중일 때만 업데이트)
         if xrp_amount * current_price > MIN_ORDER_VALUE and avg_buy_price > 0:
-            state = load_trading_state()
             highest_price = state.get("highest_price_since_buy", 0.0)
-            entry_price = state.get("entry_price", avg_buy_price)
-            entry_atr = state.get("entry_atr", indicators.get("atr_14", current_price * 0.02))
             
             # 초기화 혹은 갱신
             if highest_price <= 0.0 or highest_price < avg_buy_price:
@@ -124,75 +123,12 @@ async def execute_trading_cycle(is_forced: bool = False):
                 
             if current_price > highest_price:
                 highest_price = current_price
-                save_trading_state({"highest_price_since_buy": highest_price})
+                state["highest_price_since_buy"] = highest_price
+                save_trading_state(state)
                 print(f"📈 최고가 갱신: {highest_price:,.4f} {PRICE_UNIT}")
 
-            # ATR 기반 청산 계수 (외부화 가능)
-            ATR_STOP_LOSS = 1.5
-            ATR_PROFIT_LOCK = 3.0
-            ATR_PROFIT_LOCK_RAISE = 1.0
-            ATR_TRAILING_START = 1.5
-            ATR_TRAILING_DROP = 0.75
-
-            # 동적 청산 가격 계산
-            is_triggered = False
-            sl_type = ""
-            trigger_reason = ""
-            trailing_sl_price = 0.0
-
-            # 1. 수익 잠금 (+3 ATR 도달 시 진입가 + 1 ATR로 상향)
-            if highest_price >= entry_price + (ATR_PROFIT_LOCK * entry_atr):
-                trailing_sl_price = entry_price + (ATR_PROFIT_LOCK_RAISE * entry_atr)
-                sl_type = "수익 잠금 매도"
-                trigger_reason = f"최고가 +{ATR_PROFIT_LOCK} ATR 도달 후 수익 보존(+{ATR_PROFIT_LOCK_RAISE} ATR) 라인 이탈"
-            # 2. 트레일링 스탑 (+1.5 ATR 도달 시 최고가 대비 -0.75 ATR)
-            elif highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
-                trailing_sl_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
-                sl_type = "추적 익절매"
-                trigger_reason = f"최고가({highest_price:,.4f}) 대비 -{ATR_TRAILING_DROP} ATR 하락 추적 매도"
-            # 3. 기본 손절 (-1.5 ATR)
-            else:
-                trailing_sl_price = entry_price - (ATR_STOP_LOSS * entry_atr)
-                sl_type = "기본 손절매"
-                trigger_reason = f"진입가({entry_price:,.4f}) 대비 -{ATR_STOP_LOSS} ATR 손절 라인 이탈"
-
-            if current_price <= trailing_sl_price:
-                is_triggered = True
-                print(f"🚨 [{sl_type} 발동] 현재가({current_price})가 손절라인({trailing_sl_price:,.4f}) 도달. 사유: {trigger_reason}")
-                order_res = exchange_client.execute_order("SELL", 100.0)
-                if order_res.get("success"):
-                    exec_reason = f"[{sl_type} 집행] {trigger_reason}"
-                    save_trade_log("SELL", current_price, xrp_amount, xrp_amount * current_price, exec_reason)
-                    
-                    # 텔레그램 실시간 알림 발송 (사용자 요청으로 생략)
-                    # tg_msg = f"🚨 *[{sl_type} 집행]*\n• 종목: XRP\n• 현재가: `{current_price:,.4f}` {PRICE_UNIT}\n• 매수평단: `{avg_buy_price:,.4f}` {PRICE_UNIT}\n• 최고수익률: *+{highest_profit_rate:.2f}%*\n• 현재수익률: *{current_profit_rate:+.2f}%*\n• 사유: {trigger_reason}"
-                    # send_telegram_message(tg_msg)
-                    
-                    await notify_subscribers("new_trade", {
-                        "decision": "SELL", "price": current_price, "amount": xrp_amount,
-                        "total_krw": xrp_amount * current_price, "reason": exec_reason,
-                        "timestamp": datetime.now().isoformat()
-                    })
-                    
-                    # 상태 초기화 및 쿨타임/킬스위치 기록
-                    new_state = state.copy()
-                    new_state["highest_price_since_buy"] = 0.0
-                    if "손절매" in sl_type:
-                        new_state["last_stop_loss_time"] = time.time()
-                        new_state["consecutive_losses"] = state.get("consecutive_losses", 0) + 1
-                        
-                        # 연속 3회 손절 시 24시간 킬스위치 발동
-                        if new_state["consecutive_losses"] >= 3:
-                            print("🚨 [Kill Switch 발동] 연속 3회 손절로 인해 24시간 동안 매수를 금지합니다.")
-                            new_state["kill_switch_until"] = time.time() + (24 * 3600)
-                    else:
-                        # 익절 시 연속 손절 카운트 초기화
-                        new_state["consecutive_losses"] = 0
-                        
-                    save_trading_state(new_state)
-                    
-                    await notify_subscribers("balance_update", exchange_client.get_balances())
-                return
+            # 참고: 실시간 손절 및 트레일링 익절은 trailing_stop_monitor가 전담합니다.
+            # 여기서는 중복 청산을 방지하기 위해 정규 사이클의 청산 로직을 완전히 제거했습니다.
 
         # 3.2. 거래소 안전 예약 주문(안전장치) 실시간 점검 및 복구 로직
         if xrp_amount * current_price > MIN_ORDER_VALUE and avg_buy_price > 0:
@@ -275,7 +211,6 @@ async def execute_trading_cycle(is_forced: bool = False):
             percentage = 100.0
         
         # 🚨 리스크 관리: 킬스위치 및 쿨타임 로직
-        state = load_trading_state()
         last_sl_time = state.get("last_stop_loss_time", 0.0)
         kill_switch_until = state.get("kill_switch_until", 0.0)
         current_time = time.time()
@@ -384,17 +319,17 @@ async def execute_trading_cycle(is_forced: bool = False):
                 # 최고가 및 진입 정보 상태 관리 파일 업데이트
                 if decision == "BUY":
                     # 신규 진입 시 손절 기준이 되는 atr과 평단가 저장
-                    save_trading_state({
-                        "highest_price_since_buy": price,
-                        "entry_price": price,
-                        "entry_atr": indicators.get("atr_14", price * 0.02)
-                    })
+                    s = load_trading_state()
+                    s["highest_price_since_buy"] = price
+                    s["entry_price"] = price
+                    s["entry_atr"] = indicators.get("atr_14", price * 0.02)
+                    save_trading_state(s)
                 elif decision == "SELL":
-                    save_trading_state({
-                        "highest_price_since_buy": 0.0,
-                        "entry_price": 0.0,
-                        "entry_atr": 0.0
-                    })
+                    s = load_trading_state()
+                    s["highest_price_since_buy"] = 0.0
+                    s.pop("entry_price", None)
+                    s.pop("entry_atr", None)
+                    save_trading_state(s)
                 
                 # 🛡️ 서버 다운 대비 예약 주문(Safety Net) 즉시 실행
                 safety_res = exchange_client.place_safety_orders(amount, price)
@@ -460,14 +395,19 @@ async def trailing_stop_monitor():
                 ATR_TRAILING_DROP = state.get("optim_trailing_drop", 0.75)
                 ATR_STOP_LOSS = state.get("optim_stop_loss", 1.5)
                 
-                # 손절 라인 및 트레일링 익절 라인 동시 계산
+                # 손절 라인 및 트레일링 익절 라인 계산
                 trailing_sl_price = entry_price - (ATR_STOP_LOSS * entry_atr) # 기본 손절 라인
                 
-                # 최고가가 트레일링 시작점을 넘었다면, 트레일링 익절 라인으로 업데이트
-                if highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
+                # 1. 수익 잠금 (+3 ATR 도달 시 진입가 + 1 ATR로 상향)
+                ATR_PROFIT_LOCK = 3.0
+                ATR_PROFIT_LOCK_RAISE = 1.0
+                if highest_price >= entry_price + (ATR_PROFIT_LOCK * entry_atr):
+                    trailing_sl_price = entry_price + (ATR_PROFIT_LOCK_RAISE * entry_atr)
+                # 2. 트레일링 스탑 (+1.5 ATR 도달 시)
+                elif highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
                     trailing_sl_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
                     
-                # 현재가가 손절/익절 라인 아래로 떨어졌는지 확인
+                # 현재가가 기준선 아래로 떨어졌는지 확인
                 if current_price <= trailing_sl_price:
                     is_stop_loss = current_price < entry_price
                     action_name = "손절매" if is_stop_loss else "트레일링 익절"
@@ -484,6 +424,8 @@ async def trailing_stop_monitor():
                         
                         new_state = state.copy()
                         new_state["highest_price_since_buy"] = 0.0
+                        new_state.pop("entry_price", None)
+                        new_state.pop("entry_atr", None)
                         
                         if is_stop_loss:
                             consecutive = new_state.get("consecutive_losses", 0) + 1

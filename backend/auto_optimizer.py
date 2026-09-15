@@ -67,7 +67,7 @@ def simulate_strategy(df: pd.DataFrame, sl_coef: float, trail_start: float, trai
             macd_golden = row['macd_val'] > row['macd_sig']
             regime = row['regime']
             
-            if rsi < 40 and macd_hist > macd_sig: buy_signal = True
+            if rsi < 40 and macd_hist > 0: buy_signal = True
             elif regime == "AGGRESSIVE" and macd_golden and rsi < 65: buy_signal = True
                 
             if buy_signal:
@@ -89,7 +89,8 @@ def simulate_strategy(df: pd.DataFrame, sl_coef: float, trail_start: float, trai
     
     return {
         "pf": profit_factor,
-        "win_rate": len(winning_trades) / (len(winning_trades) + len(losing_trades)) * 100 if (winning_trades or losing_trades) else 0.0
+        "win_rate": len(winning_trades) / (len(winning_trades) + len(losing_trades)) * 100 if (winning_trades or losing_trades) else 0.0,
+        "total_trades": len(winning_trades) + len(losing_trades)
     }
 
 async def run_auto_optimization():
@@ -103,8 +104,7 @@ async def run_auto_optimization():
             return
 
         # 지표 계산
-        df['rsi_14'] = calculate_rsi(df)
-        for col in ['macd_hist', 'macd_val', 'macd_sig', 'atr_14', 'ma5', 'ma20', 'ma60']: df[col] = 0.0
+        for col in ['rsi_14', 'macd_hist', 'macd_val', 'macd_sig', 'atr_14', 'ma5', 'ma20', 'ma60']: df[col] = 0.0
         df['regime'] = "NONE"
 
         # 지표 일괄 계산 (단순화된 루프)
@@ -112,6 +112,7 @@ async def run_auto_optimization():
             window = df.iloc[i-100:i+1]
             macd = calculate_macd(window)
             ma = calculate_ma(window)
+            df.loc[df.index[i], 'rsi_14'] = calculate_rsi(window)
             df.loc[df.index[i], 'macd_hist'] = macd['histogram']
             df.loc[df.index[i], 'macd_val'] = macd['macd']
             df.loc[df.index[i], 'macd_sig'] = macd['signal']
@@ -133,7 +134,8 @@ async def run_auto_optimization():
             for ts in ts_opts:
                 for td in td_opts:
                     res = simulate_strategy(df, sl, ts, td)
-                    if res["pf"] > best_pf:
+                    # 최소 거래 횟수 방어 로직 (최소 5번은 거래해야 유의미함)
+                    if res["total_trades"] >= 5 and res["pf"] > best_pf:
                         best_pf = res["pf"]
                         best_params = {"sl": sl, "ts": ts, "td": td, "pf": res["pf"], "wr": res["win_rate"]}
 

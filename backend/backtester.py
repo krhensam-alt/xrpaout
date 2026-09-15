@@ -158,7 +158,7 @@ def run_backtest(days_back=365):
             macd_golden = row['macd_val'] > row['macd_sig']
             regime = row['regime']
             
-            if rsi < 40 and macd_hist > macd_sig:
+            if rsi < 40 and macd_hist > 0:
                 buy_signal = True
             elif regime == "AGGRESSIVE" and macd_golden and rsi < 65:
                 buy_signal = True

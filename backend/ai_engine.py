@@ -29,8 +29,8 @@ def rule_engine_decision(indicators: dict) -> dict:
     else:
         regime = "BALANCED"
 
-    # 규칙 1: 단기 반등 스윙 매수
-    if rsi < 40 and macd_hist > macd_sig:
+    # 규칙 1: 과매도 + 모멘텀 회복 (역추세 매수)
+    if rsi < 40 and macd_hist > 0:
         return {"decision": "BUY", "reason": f"RSI {rsi:.1f} 반등 시그널 (단기 낙폭 과대)"}
         
     # 규칙 2: 강세장 추세 추종
