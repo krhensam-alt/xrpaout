@@ -288,6 +288,7 @@ async def execute_trading_cycle(is_forced: bool = False):
         
         tg_report = (
             f"📊 *[XRP 정기 보고]*\n"
+            f"• 현재가: `{current_price:,.2f}` KRW\n"
             f"• 원금: `{initial_krw:,.0f}` KRW\n"
             f"• 자산: `{total_val:,.0f}` KRW (KRW:`{krw_bal:,.0f}`)\n"
             f"• 손익: *{pnl_sign}{pnl_krw:,.0f} KRW* ({pnl_sign}{pnl_percent:.2f}%)\n"
