@@ -5,7 +5,7 @@ from datetime import datetime
 from config import config
 from exchange import exchange_client, CURRENCY_UNIT, PRICE_UNIT, MIN_ORDER_VALUE
 from indicators import get_all_indicators
-from ai_engine import query_ai_decision
+from ai_engine import rule_engine_decision, query_ai_veto
 from database import save_ai_report, save_trade_log, get_ai_experiences, update_ai_report_outcome, get_db_connection
 from telegram_notifier import send_telegram_message
 import sqlite3
@@ -218,9 +218,8 @@ async def execute_trading_cycle(is_forced: bool = False):
             except Exception as safety_err:
                 print(f"⚠️ 안전장치 검증 중 오류 발생: {safety_err}")
 
-        # 3.5. 과거 판단 복기 및 경험 데이터 로드
+        # 3.5. 과거 판단 복기 (사후 평가용, 새 로직에서는 경험 데이터를 LLM에 전달하지 않음)
         await evaluate_past_reports(current_price)
-        experiences = get_ai_experiences(limit=5)
 
         # 3.6. 고래 매수세/호가창 및 실시간 뉴스 수집
         print("고래 움직임 및 최신 뉴스 데이터 수집 중...")
@@ -231,9 +230,8 @@ async def execute_trading_cycle(is_forced: bool = False):
         latest_news = news_client.get_latest_xrp_news()
         indicators["recent_news"] = latest_news
 
-        # 4. 규틱 엔진 의사결정 및 LLM Veto (경험 데이터 주입 제거)
+        # 4. 규칙 엔진 의사결정 및 LLM Veto
         print("규칙 엔진 의사결정 진행 중...")
-        from ai_engine import rule_engine_decision, query_ai_veto
         
         rule_res = rule_engine_decision(indicators)
         decision = rule_res.get("decision", "HOLD")
