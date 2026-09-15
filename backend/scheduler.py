@@ -111,10 +111,12 @@ async def execute_trading_cycle(is_forced: bool = False):
         current_price = indicators.get("current_price", 0.0)
         xrp_amount = balances.get("xrp", 0.0)
 
-        # 🚨 최우선 기계적 리스크 관리 필터 (추적 손절매 및 익절매 잠금)
+        # 🚨 최우선 기계적 리스크 관리 필터 (ATR 기반 청산 로직)
         if xrp_amount * current_price > MIN_ORDER_VALUE and avg_buy_price > 0:
             state = load_trading_state()
             highest_price = state.get("highest_price_since_buy", 0.0)
+            entry_price = state.get("entry_price", avg_buy_price)
+            entry_atr = state.get("entry_atr", indicators.get("atr_14", current_price * 0.02))
             
             # 초기화 혹은 갱신
             if highest_price <= 0.0 or highest_price < avg_buy_price:
@@ -125,30 +127,37 @@ async def execute_trading_cycle(is_forced: bool = False):
                 save_trading_state({"highest_price_since_buy": highest_price})
                 print(f"📈 최고가 갱신: {highest_price:,.4f} {PRICE_UNIT}")
 
-            highest_profit_rate = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0
-            current_profit_rate = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            # ATR 기반 청산 계수 (외부화 가능)
+            ATR_STOP_LOSS = 1.5
+            ATR_PROFIT_LOCK = 3.0
+            ATR_PROFIT_LOCK_RAISE = 1.0
+            ATR_TRAILING_START = 1.5
+            ATR_TRAILING_DROP = 0.75
 
-            # 추적 손절라인 계산
-            # 1. 최고수익률이 +5.0% 이상 도달한 적이 있으면 최고가 대비 -2.5% 추적 익절/손절 적용 (추세 극대화)
-            if highest_profit_rate >= 5.0:
-                trailing_sl_price = highest_price * 0.975
-                trigger_reason = f"최고 수익률 {highest_profit_rate:.2f}% 도달 후 최고가({highest_price:,.4f}) 대비 -2.5% 추적 매도"
-                is_triggered = current_price <= trailing_sl_price
-                sl_type = "추적 익절매" if trailing_sl_price > avg_buy_price else "추적 손절매"
-            # 2. 최고수익률이 +3.0% ~ +5.0% 도달한 적이 있으면 +1.0% 수익 안전 확보 (수익 잠금)
-            elif highest_profit_rate >= 3.0:
-                trailing_sl_price = avg_buy_price * 1.01
-                trigger_reason = f"최고 수익률 {highest_profit_rate:.2f}% 도달 후 +1.0% 수익 안전 확보 매도"
-                is_triggered = current_price <= trailing_sl_price
-                sl_type = "수익 확보 매도"
-            # 3. 기본 손절 라인 (-2.0% 고정 - 리스크 관리 강화)
+            # 동적 청산 가격 계산
+            is_triggered = False
+            sl_type = ""
+            trigger_reason = ""
+            trailing_sl_price = 0.0
+
+            # 1. 수익 잠금 (+3 ATR 도달 시 진입가 + 1 ATR로 상향)
+            if highest_price >= entry_price + (ATR_PROFIT_LOCK * entry_atr):
+                trailing_sl_price = entry_price + (ATR_PROFIT_LOCK_RAISE * entry_atr)
+                sl_type = "수익 잠금 매도"
+                trigger_reason = f"최고가 +{ATR_PROFIT_LOCK} ATR 도달 후 수익 보존(+{ATR_PROFIT_LOCK_RAISE} ATR) 라인 이탈"
+            # 2. 트레일링 스탑 (+1.5 ATR 도달 시 최고가 대비 -0.75 ATR)
+            elif highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
+                trailing_sl_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
+                sl_type = "추적 익절매"
+                trigger_reason = f"최고가({highest_price:,.4f}) 대비 -{ATR_TRAILING_DROP} ATR 하락 추적 매도"
+            # 3. 기본 손절 (-1.5 ATR)
             else:
-                trailing_sl_price = avg_buy_price * 0.98
-                trigger_reason = f"평단가 대비 -2.0% 하락으로 인한 계좌 보호 손절매"
-                is_triggered = current_profit_rate <= -2.0
+                trailing_sl_price = entry_price - (ATR_STOP_LOSS * entry_atr)
                 sl_type = "기본 손절매"
+                trigger_reason = f"진입가({entry_price:,.4f}) 대비 -{ATR_STOP_LOSS} ATR 손절 라인 이탈"
 
-            if is_triggered:
+            if current_price <= trailing_sl_price:
+                is_triggered = True
                 print(f"🚨 [{sl_type} 발동] 현재가({current_price})가 손절라인({trailing_sl_price:,.4f}) 도달. 사유: {trigger_reason}")
                 order_res = exchange_client.execute_order("SELL", 100.0)
                 if order_res.get("success"):
@@ -222,13 +231,48 @@ async def execute_trading_cycle(is_forced: bool = False):
         latest_news = news_client.get_latest_xrp_news()
         indicators["recent_news"] = latest_news
 
-        # 4. AI 의사결정 질의 (경험 데이터 주입)
-        print("AI 의사결정 질의 중 (경험 기반 학습 적용)...")
-        ai_res = query_ai_decision(indicators, balances, experiences)
-        decision = ai_res.get("decision", "HOLD")
-        confidence = ai_res.get("confidence", 0.5)
-        percentage = ai_res.get("percentage", 0.0)
-        reason = ai_res.get("reason", "")
+        # 4. 규틱 엔진 의사결정 및 LLM Veto (경험 데이터 주입 제거)
+        print("규칙 엔진 의사결정 진행 중...")
+        from ai_engine import rule_engine_decision, query_ai_veto
+        
+        rule_res = rule_engine_decision(indicators)
+        decision = rule_res.get("decision", "HOLD")
+        reason = rule_res.get("reason", "")
+        
+        # Rule Engine이 BUY를 외치면 LLM에게 뉴스 악재(Veto) 확인
+        if decision == "BUY":
+            print("LLM Veto 시스템에 악재 뉴스 확인 중...")
+            veto_res = query_ai_veto(indicators)
+            if veto_res.get("veto", False):
+                print(f"🛑 LLM Veto 발동! 매수 기각: {veto_res.get('reason', '')}")
+                decision = "HOLD"
+                reason = f"규칙 엔진 매수(BUY) -> LLM 거부권 행사(Veto): {veto_res.get('reason', '')}"
+            else:
+                print("✅ LLM Veto 통과. 뉴스 악재 없음.")
+                reason = f"{reason} (LLM 검증 완료: {veto_res.get('reason', '')})"
+        
+        # 4.5. 포지션 사이징 (리스크 기반 1% 룰 적용)
+        confidence = 1.0 # 룰 엔진은 100% 확신으로 간주
+        percentage = 0.0
+        if decision == "BUY":
+            main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
+            risk_tolerance = main_cash * 0.01 # 총 가용 현금의 1%를 최대 손실로 고정
+            
+            atr_val = indicators.get("atr_14", current_price * 0.02)
+            stop_loss_pct = (1.5 * atr_val) / current_price
+            
+            if stop_loss_pct > 0:
+                target_krw = risk_tolerance / stop_loss_pct
+            else:
+                target_krw = 0.0
+                
+            # 가용 현금 내에서만 매수 (최대 100%)
+            target_krw = min(target_krw, main_cash)
+            percentage = (target_krw / main_cash * 100.0) if main_cash > 0 else 0.0
+            print(f"포지션 사이징: 투입금 {target_krw:,.0f} 원 (현금 비중 {percentage:.1f}%) / 손절폭 {stop_loss_pct*100:.2f}%")
+            
+        elif decision == "SELL":
+            percentage = 100.0
         
         # 🚨 리스크 관리: 킬스위치 및 쿨타임 로직
         state = load_trading_state()
@@ -250,7 +294,25 @@ async def execute_trading_cycle(is_forced: bool = False):
 
         # 🚨 잔고 부족 시 매수 방지 로직 추가
         main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
-        if decision == "BUY" and main_cash < MIN_ORDER_VALUE:
+        
+        # 🚨 일일 손실 한도 (-4%) 방어망
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        total_asset = main_cash + (balances.get("xrp", 0) * current_price)
+        daily_start_cap = state.get(f"daily_start_{today_str}", total_asset)
+        
+        if f"daily_start_{today_str}" not in state:
+            state[f"daily_start_{today_str}"] = total_asset
+            save_trading_state(state)
+            daily_start_cap = total_asset
+            
+        daily_pnl_pct = ((total_asset - daily_start_cap) / daily_start_cap * 100) if daily_start_cap > 0 else 0.0
+        
+        if decision == "BUY" and daily_pnl_pct <= -4.0:
+            print(f"🛑 [일일 손실 한도 도달] 당일 손실이 {daily_pnl_pct:.2f}%로 -4%를 초과하여 매수를 전면 차단합니다.")
+            decision = "HOLD"
+            reason = f"[일일 손실 차단] 당일 누적 손실 {daily_pnl_pct:.2f}%로 -4% 한도 초과"
+            percentage = 0.0
+        elif decision == "BUY" and main_cash < MIN_ORDER_VALUE:
             print(f"⚠️ 잔고 부족({main_cash:,.0f} {PRICE_UNIT})으로 인해 매수 결정을 HOLD로 전환합니다.")
             decision = "HOLD"
             reason = f"[잔고 부족으로 매수 취소] {reason}"
@@ -311,11 +373,20 @@ async def execute_trading_cycle(is_forced: bool = False):
                 
                 save_trade_log(decision, price, amount, total_krw, exec_reason)
                 
-                # 최고가 상태 관리 파일 업데이트
+                # 최고가 및 진입 정보 상태 관리 파일 업데이트
                 if decision == "BUY":
-                    save_trading_state({"highest_price_since_buy": price})
+                    # 신규 진입 시 손절 기준이 되는 atr과 평단가 저장
+                    save_trading_state({
+                        "highest_price_since_buy": price,
+                        "entry_price": price,
+                        "entry_atr": indicators.get("atr_14", price * 0.02)
+                    })
                 elif decision == "SELL":
-                    save_trading_state({"highest_price_since_buy": 0.0})
+                    save_trading_state({
+                        "highest_price_since_buy": 0.0,
+                        "entry_price": 0.0,
+                        "entry_atr": 0.0
+                    })
                 
                 # 🛡️ 서버 다운 대비 예약 주문(Safety Net) 즉시 실행
                 safety_res = exchange_client.place_safety_orders(amount, price)
@@ -366,15 +437,23 @@ async def trailing_stop_monitor():
                 avg_buy_price = balances.get("avg_buy_price", 0)
                 highest_price = state.get("highest_price_since_buy", 0)
                 
+                entry_price = state.get("entry_price", avg_buy_price)
+                
+                # ATR 정보가 없으면 기본값(2%) 사용
+                entry_atr = state.get("entry_atr", current_price * 0.02)
+                
                 if current_price > highest_price:
                     highest_price = current_price
                     state["highest_price_since_buy"] = highest_price
                     save_trading_state(state)
                     
-                # 수익권 진입 후 (예: 평단가 대비 1.5% 상승 시 트레일링 활성화)
-                if highest_price > avg_buy_price * 1.015:
-                    # 최고점 대비 1% 하락 시 익절
-                    trigger_price = highest_price * 0.99
+                ATR_TRAILING_START = 1.5
+                ATR_TRAILING_DROP = 0.75
+                
+                # 수익권 진입 후 (예: 평단가 대비 1.5 ATR 상승 시 트레일링 활성화)
+                if highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
+                    # 최고점 대비 0.75 ATR 하락 시 익절
+                    trigger_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
                     if current_price <= trigger_price:
                         print(f"🎯 트레일링 스탑 발동! 최고점({highest_price}) 대비 하락. 익절 매도 진행.")
                         # 전량 매도 실행

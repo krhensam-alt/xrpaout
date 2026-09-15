@@ -84,6 +84,22 @@ def calculate_volume_trend(df: pd.DataFrame) -> dict:
         "is_volume_spike": bool(ratio > 1.8)  # 최근 평균 대비 1.8배 이상이면 급증
     }
 
+def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
+    """Average True Range (ATR) 계산 - 확정된 캔들만 사용 (최종 캔들은 제외하거나 완성되었다고 가정)"""
+    if len(df) < period + 1:
+        return 0.0
+
+    high_low = df['high'] - df['low']
+    high_close = np.abs(df['high'] - df['close'].shift())
+    low_close = np.abs(df['low'] - df['close'].shift())
+
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    
+    # Wilder's Smoothing for ATR
+    atr = true_range.ewm(alpha=1/period, adjust=False).mean()
+    return float(atr.iloc[-1])
+
 def get_all_indicators(df: pd.DataFrame) -> dict:
     """모든 기술적 지표를 통합하여 반환"""
     if df.empty or 'close' not in df:
@@ -95,5 +111,6 @@ def get_all_indicators(df: pd.DataFrame) -> dict:
         "bollinger": calculate_bollinger_bands(df),
         "ma": calculate_ma(df),
         "volume_trend": calculate_volume_trend(df),
+        "atr_14": calculate_atr(df),
         "current_price": float(df['close'].iloc[-1])
     }

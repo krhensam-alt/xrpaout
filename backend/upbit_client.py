@@ -255,7 +255,10 @@ class UpbitClient:
             return True # API 오류 시 중복 등록 방지를 위해 일단 True 반환
 
     def place_safety_orders(self, amount: float, buy_price: float):
-        """매수 직후 익절(+10.0%) 지정가 매도 예약 (서버 다운 대비)"""
+        """매수 직후 익절(+10.0%) 지정가 매도 예약 (서버 다운 대비)
+        ※ 주의: 이 주문은 하방 보호(Stop-loss)가 아니며, 
+        오직 서버가 뻗었을 때 펌핑이 나오면 팔리도록 하는 상방 안전망입니다.
+        진정한 하방 보호는 메인 봇과 트레일링 스탑 모니터가 시장가 청산으로 담당합니다."""
         if self.is_mock: return {"success": True, "info": "MOCK_LIMIT_PLACED"}
         
         tp_price = pyupbit.get_tick_size(buy_price * 1.100) # 안전장치는 +10%로 상향 설정
