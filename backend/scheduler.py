@@ -202,10 +202,14 @@ async def execute_trading_cycle(is_forced: bool = False):
         await evaluate_past_reports(current_price)
         experiences = get_ai_experiences(limit=5)
 
-        # 3.6. 고래 매수세/호가창 불균형 데이터 수집
-        print("고래 움직임(호가창 불균형) 데이터 수집 중...")
+        # 3.6. 고래 매수세/호가창 및 실시간 뉴스 수집
+        print("고래 움직임 및 최신 뉴스 데이터 수집 중...")
         ob_imbalance = exchange_client.get_orderbook_imbalance()
         indicators["orderbook_imbalance"] = ob_imbalance
+        
+        from news_client import news_client
+        latest_news = news_client.get_latest_xrp_news()
+        indicators["recent_news"] = latest_news
 
         # 4. AI 의사결정 질의 (경험 데이터 주입)
         print("AI 의사결정 질의 중 (경험 기반 학습 적용)...")

@@ -102,6 +102,8 @@ Example: {{"decision": "BUY", "reason": "RSI 과매도 및 반등 시그널 포�
     is_vol_spike = vol_info.get("is_volume_spike", False)
     vol_ratio = vol_info.get("vol_ratio", 1.0)
     
+    news_lines = "\n".join([f"- {news}" for news in indicators.get("recent_news", ["No recent news available"])])
+
     user_prompt = f"""Market Data:
 - Price: {current_price:,.4f} {PRICE_UNIT}
 - RSI: {rsi:.1f}
@@ -112,6 +114,9 @@ Example: {{"decision": "BUY", "reason": "RSI 과매도 및 반등 시그널 포�
 - Orderbook Bid/Ask Ratio: {bid_ask_ratio:.2f} (If > 1.5, implies strong buy walls)
 - Volume Spike: {is_vol_spike} (Ratio: {vol_ratio:.2f}x)
 - Whale Behavior: If strong buy walls exist BUT Volume is NOT spiking, it is likely a spoof (fake wall to trap retail). If BOTH are true, it's real accumulation.
+
+Recent News Headlines (Consider sentiment - FUD vs FOMO):
+{news_lines}
 
 Assets (For Portfolio Context Only):
 - Value: {total_val:,.0f} KRW (Profit: {profit_rate:+.2f}%)
