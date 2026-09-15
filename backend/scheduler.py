@@ -141,11 +141,11 @@ async def execute_trading_cycle(is_forced: bool = False):
                 trigger_reason = f"최고 수익률 {highest_profit_rate:.2f}% 도달 후 +1.0% 수익 안전 확보 매도"
                 is_triggered = current_price <= trailing_sl_price
                 sl_type = "수익 확보 매도"
-            # 3. 기본 손절 라인 (-3.5% 고정)
+            # 3. 기본 손절 라인 (-2.0% 고정 - 리스크 관리 강화)
             else:
-                trailing_sl_price = avg_buy_price * 0.965
-                trigger_reason = f"평단가 대비 -3.5% 하락으로 인한 계좌 보호 손절매"
-                is_triggered = current_profit_rate <= -3.5
+                trailing_sl_price = avg_buy_price * 0.98
+                trigger_reason = f"평단가 대비 -2.0% 하락으로 인한 계좌 보호 손절매"
+                is_triggered = current_profit_rate <= -2.0
                 sl_type = "기본 손절매"
 
             if is_triggered:
@@ -165,10 +165,21 @@ async def execute_trading_cycle(is_forced: bool = False):
                         "timestamp": datetime.now().isoformat()
                     })
                     
-                    # 상태 초기화 및 쿨타임 기록
-                    new_state = {"highest_price_since_buy": 0.0}
+                    # 상태 초기화 및 쿨타임/킬스위치 기록
+                    new_state = state.copy()
+                    new_state["highest_price_since_buy"] = 0.0
                     if "손절매" in sl_type:
                         new_state["last_stop_loss_time"] = time.time()
+                        new_state["consecutive_losses"] = state.get("consecutive_losses", 0) + 1
+                        
+                        # 연속 3회 손절 시 24시간 킬스위치 발동
+                        if new_state["consecutive_losses"] >= 3:
+                            print("🚨 [Kill Switch 발동] 연속 3회 손절로 인해 24시간 동안 매수를 금지합니다.")
+                            new_state["kill_switch_until"] = time.time() + (24 * 3600)
+                    else:
+                        # 익절 시 연속 손절 카운트 초기화
+                        new_state["consecutive_losses"] = 0
+                        
                     save_trading_state(new_state)
                     
                     await notify_subscribers("balance_update", exchange_client.get_balances())
@@ -219,14 +230,23 @@ async def execute_trading_cycle(is_forced: bool = False):
         percentage = ai_res.get("percentage", 0.0)
         reason = ai_res.get("reason", "")
         
-        # 🚨 연속 손절매 방지 쿨타임 로직 (2시간으로 단축하여 기회 창출)
+        # 🚨 리스크 관리: 킬스위치 및 쿨타임 로직
         state = load_trading_state()
         last_sl_time = state.get("last_stop_loss_time", 0.0)
-        if decision == "BUY" and time.time() - last_sl_time < 2 * 3600:
-            print("⚠️ 손절매 이후 쿨타임(2시간)이 지나지 않아 매수를 보류합니다.")
-            decision = "HOLD"
-            reason = f"[쿨타임 적용] 최근 손절매 이후 안정화 대기 중. {reason}"
-            percentage = 0.0
+        kill_switch_until = state.get("kill_switch_until", 0.0)
+        current_time = time.time()
+        
+        if decision == "BUY":
+            if current_time < kill_switch_until:
+                print("🚨 킬스위치 작동 중: 연속 손절로 인해 매수가 차단되었습니다.")
+                decision = "HOLD"
+                reason = f"[킬스위치 발동] 연속 3회 손절로 인한 24시간 매수 금지 상태입니다. {reason}"
+                percentage = 0.0
+            elif current_time - last_sl_time < 2 * 3600:
+                print("⚠️ 손절매 이후 쿨타임(2시간)이 지나지 않아 매수를 보류합니다.")
+                decision = "HOLD"
+                reason = f"[쿨타임 적용] 최근 손절매 이후 안정화 대기 중. {reason}"
+                percentage = 0.0
 
         # 🚨 잔고 부족 시 매수 방지 로직 추가
         main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)

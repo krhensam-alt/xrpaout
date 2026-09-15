@@ -134,7 +134,7 @@ Return the JSON decision."""
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
-        "temperature": 0.1,
+        "temperature": 0.0,
         "max_tokens": 800,
         "stream": False
     }
