@@ -274,29 +274,7 @@ async def execute_trading_cycle(is_forced: bool = False):
         # AI 리포트 DB 저장 (현재가 포함)
         save_ai_report(decision, confidence, percentage, reason, indicators, current_price)
         
-        # 텔레그램 정기 보고 (핵심 팩트만 간결하게)
-        state = load_trading_state()
-        initial_krw = state.get("investment_base", float(config.MAX_INVESTMENT_KRW))
-        total_val = balances.get("total_val", 0)
-        krw_bal = balances.get("krw", 0)
-        xrp_bal = balances.get("xrp", 0)
-        avg_buy = balances.get("avg_buy_price", 0)
-        
-        pnl_krw = total_val - initial_krw
-        pnl_sign = "+" if pnl_krw > 0 else ""
-        pnl_percent = (pnl_krw / initial_krw * 100) if initial_krw > 0 else 0
-        
-        tg_report = (
-            f"📊 *[XRP 정기 보고]*\n"
-            f"• 현재가: `{current_price:,.2f}` KRW\n"
-            f"• 원금: `{initial_krw:,.0f}` KRW\n"
-            f"• 자산: `{total_val:,.0f}` KRW (KRW:`{krw_bal:,.0f}`)\n"
-            f"• 손익: *{pnl_sign}{pnl_krw:,.0f} KRW* ({pnl_sign}{pnl_percent:.2f}%)\n"
-            f"• XRP: `{xrp_bal:,.2f}` 개 (평단: `{avg_buy:,.2f}`)\n"
-            f"• AI 판단: *{decision}*"
-        )
-        send_telegram_message(tg_report)
-            
+        # 텔레그램 보고는 주문 실행 이후에 최신 잔고를 반영하여 전송하도록 뒤로 이동함
         await notify_subscribers("new_report", {
             "decision": decision,
             "confidence": confidence,
@@ -354,12 +332,36 @@ async def execute_trading_cycle(is_forced: bool = False):
             else:
                 fail_reason = order_res.get("reason", "알 수 없는 사유")
                 print(f"주문 실행 실패: {fail_reason}")
+                decision = f"{decision} (Failed: {fail_reason})"
         else:
             print(f"이번 사이클 의사결정: {decision} ({reason})")
             
         # 자산 상태 업데이트 브로드캐스트
         new_balances = exchange_client.get_balances()
         await notify_subscribers("balance_update", new_balances)
+        
+        # 텔레그램 정기 보고 (결과가 모두 반영된 최신 잔고 기준)
+        state = load_trading_state()
+        initial_krw = state.get("investment_base", float(config.MAX_INVESTMENT_KRW))
+        total_val = new_balances.get("total_val", 0)
+        krw_bal = new_balances.get("krw", 0)
+        xrp_bal = new_balances.get("xrp", 0)
+        avg_buy = new_balances.get("avg_buy_price", 0)
+        
+        pnl_krw = total_val - initial_krw
+        pnl_sign = "+" if pnl_krw > 0 else ""
+        pnl_percent = (pnl_krw / initial_krw * 100) if initial_krw > 0 else 0
+        
+        tg_report = (
+            f"📊 *[XRP 정기 보고]*\n"
+            f"• 현재가: `{current_price:,.2f}` KRW\n"
+            f"• 원금: `{initial_krw:,.0f}` KRW\n"
+            f"• 자산: `{total_val:,.0f}` KRW (KRW:`{krw_bal:,.0f}`)\n"
+            f"• 손익: *{pnl_sign}{pnl_krw:,.0f} KRW* ({pnl_sign}{pnl_percent:.2f}%)\n"
+            f"• XRP: `{xrp_bal:,.2f}` 개 (평단: `{avg_buy:,.2f}`)\n"
+            f"• AI 판단: *{decision}*"
+        )
+        send_telegram_message(tg_report)
         
     except Exception as e:
         error_msg = f"❌ *트레이딩 사이클 치명적 오류 발생*\n사유: `{str(e)}`"
