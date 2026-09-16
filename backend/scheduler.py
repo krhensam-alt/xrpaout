@@ -446,6 +446,12 @@ async def trailing_stop_monitor():
                             
                         save_trading_state(new_state)
                         
+                        # 텔레그램 알림 발송 (청산 결과 안내)
+                        profit_pct = ((price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
+                        emoji = "💔" if is_stop_loss else "💰"
+                        tg_msg = f"{emoji} *[안전장치 청산 완료]*\n• 종목: XRP\n• 유형: {action_name}\n• 매도단가: `{price:,.2f}` KRW\n• 수익률: *{profit_pct:+.2f}%*\n(기계적 방어 로직에 의해 자동 매도되었습니다)"
+                        send_telegram_message(tg_msg)
+                        
                         # 웹소켓 브로드캐스트
                         await notify_subscribers("new_trade", {
                             "decision": "SELL",
