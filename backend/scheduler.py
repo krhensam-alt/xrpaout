@@ -190,22 +190,30 @@ async def execute_trading_cycle(is_forced: bool = False):
         percentage = 0.0
         if decision == "BUY":
             main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
-            risk_tolerance = main_cash * 0.01 # 총 가용 현금의 1%를 최대 손실로 고정
+            xrp_val = balances.get("xrp", 0) * indicators.get("current_price", 0)
             
-            # 튜닝된 손절 비율 사용 (기본 1.5)
-            optim_sl = state.get("optim_stop_loss", 1.5)
-            atr_val = indicators.get("atr_14", current_price * 0.02)
-            stop_loss_pct = (optim_sl * atr_val) / current_price
-            
-            if stop_loss_pct > 0:
-                target_krw = risk_tolerance / stop_loss_pct
+            if xrp_val > 5000:
+                print(f"⚠️ 이미 포지션 보유 중({xrp_val:,.0f} 원). 추가 매수(물타기/불타기)를 금지합니다.")
+                decision = "HOLD"
+                reason = f"[포지션 보유 중] 이미 매수한 상태이므로 추가 진입 차단. {reason}"
+                percentage = 0.0
             else:
-                target_krw = 0.0
+                risk_tolerance = main_cash * 0.01 # 총 가용 현금의 1%를 최대 손실로 고정
                 
-            # 가용 현금 내에서만 매수 (최대 100%)
-            target_krw = min(target_krw, main_cash)
-            percentage = (target_krw / main_cash * 100.0) if main_cash > 0 else 0.0
-            print(f"포지션 사이징: 투입금 {target_krw:,.0f} 원 (현금 비중 {percentage:.1f}%) / 손절폭 {stop_loss_pct*100:.2f}%")
+                # 튜닝된 손절 비율 사용 (기본 1.5 -> 2.5로 넓힘)
+                optim_sl = state.get("optim_stop_loss", 2.5) 
+                atr_val = indicators.get("atr_14", current_price * 0.02)
+                stop_loss_pct = (optim_sl * atr_val) / current_price
+                
+                if stop_loss_pct > 0:
+                    target_krw = risk_tolerance / stop_loss_pct
+                else:
+                    target_krw = 0.0
+                    
+                # 가용 현금 내에서만 매수 (최대 100%)
+                target_krw = min(target_krw, main_cash)
+                percentage = (target_krw / main_cash * 100.0) if main_cash > 0 else 0.0
+                print(f"포지션 사이징: 투입금 {target_krw:,.0f} 원 (현금 비중 {percentage:.1f}%) / 손절폭 {stop_loss_pct*100:.2f}%")
             
         elif decision == "SELL":
             percentage = 100.0
@@ -221,10 +229,10 @@ async def execute_trading_cycle(is_forced: bool = False):
                 decision = "HOLD"
                 reason = f"[킬스위치 발동] 연속 3회 손절로 인한 24시간 매수 금지 상태입니다. {reason}"
                 percentage = 0.0
-            elif current_time - last_sl_time < 2 * 3600:
-                print("⚠️ 손절매 이후 쿨타임(2시간)이 지나지 않아 매수를 보류합니다.")
+            elif current_time - last_sl_time < 6 * 3600:
+                print("⚠️ 손절매 이후 쿨타임(6시간)이 지나지 않아 매수를 보류합니다.")
                 decision = "HOLD"
-                reason = f"[쿨타임 적용] 최근 손절매 이후 안정화 대기 중. {reason}"
+                reason = f"[쿨타임 적용] 최근 손절매 이후 6시간 안정화 대기 중. {reason}"
                 percentage = 0.0
 
         # 🚨 잔고 부족 시 매수 방지 로직 추가
