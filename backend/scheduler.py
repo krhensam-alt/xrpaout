@@ -470,6 +470,24 @@ async def trailing_stop_monitor():
                             "timestamp": datetime.now().isoformat()
                         })
                         print(f"주문 체결 성공: SELL | 수량: {amount:.4f} | 총액: {total_krw:.0f}{CURRENCY_UNIT}")
+            else:
+                # XRP 잔고가 없는데(0), 시스템 상태상으로는 보유 중(entry_price 존재)인 경우
+                # => 거래소에 걸어둔 +10% 예약 매도(안전장치)가 봇 몰래 체결되었거나, 사용자가 수동 매도한 상황
+                entry_price = state.get("entry_price")
+                if entry_price is not None:
+                    print("⚠️ 시스템 상 보유 중으로 기록되어 있으나 실제 잔고가 0입니다. (예약 매도 체결 추정)")
+                    
+                    # 상태 초기화
+                    new_state = state.copy()
+                    new_state["highest_price_since_buy"] = 0.0
+                    new_state.pop("entry_price", None)
+                    new_state.pop("entry_atr", None)
+                    new_state["consecutive_losses"] = 0
+                    save_trading_state(new_state)
+                    
+                    # 텔레그램 알림 발송 (+10% 목표가 도달)
+                    tg_msg = f"🎉 *[거래소 예약 매도 체결]*\n• 종목: XRP\n• 추정 단가: `{entry_price * 1.10:,.2f}` KRW (+10% 목표가)\n• 상황: 봇이 쉬는 동안 급등이 발생하여, 업비트에 미리 걸어둔 +10% 익절 예약 주문이 자동 체결되었습니다! 상태를 초기화합니다."
+                    send_telegram_message(tg_msg)
         except Exception as e:
             print(f"Trailing Stop 오류: {e}")
 
