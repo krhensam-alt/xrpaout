@@ -17,22 +17,11 @@ data:
   LM_STUDIO_BASE_URL: "http://192.168.0.37:11434/v1"
   LM_STUDIO_MODEL: "qwen3.8:27b"
   SELECTED_EXCHANGE: "UPBIT"
-  TRADING_INTERVAL_MINUTES: "15"
+  TRADING_INTERVAL_MINUTES: "60"
   MAX_INVESTMENT_KRW: "100000"
   MOCK_MODE: "False"
   DATABASE_PATH: "/app/data/trading_log.db"
   STATE_PATH: "/app/data/trading_state.json"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: xrpaout-secret
-type: Opaque
-data:
-  UPBIT_ACCESS_KEY: "CHANGE_ME_BASE64" # [!] 보안 경고: 새 키를 발급받아 다시 넣으세요.
-  UPBIT_SECRET_KEY: "CHANGE_ME_BASE64"
-  TELEGRAM_BOT_TOKEN: "CHANGE_ME_BASE64"
-  TELEGRAM_CHAT_ID: "CHANGE_ME_BASE64"
 ---
 apiVersion: apps/v1
 kind: Deployment

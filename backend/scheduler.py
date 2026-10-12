@@ -94,21 +94,25 @@ async def execute_trading_cycle(is_forced: bool = False):
     try:
         # 1. 데이터 수집
         print("데이터 수집 중...")
-        df = exchange_client.get_ohlcv()
-        if df is None or df.empty:
+        # EMA200 수렴을 위해 충분한 봉을 받고, 진행 중인 마지막 봉은 제외 (미확정 신호 방지)
+        df = exchange_client.get_ohlcv(count=1000)
+        if df is None or len(df) < config.TREND_EMA_PERIOD + 2:
             print("캔들 데이터 수집 실패로 이번 사이클을 건너뜁니다.")
             return
+        df = df.iloc[:-1]
 
         # 2. 지표 계산
         print("지표 계산 중...")
-        indicators = get_all_indicators(df)
-        
+        indicators = get_all_indicators(df, config.BREAKOUT_PERIOD, config.TREND_EMA_PERIOD)
+        indicators["current_price"] = exchange_client.get_current_price()
+
         # 3. 잔고 및 평단가 조회
         print("잔고 조회 중...")
         balances = exchange_client.get_balances()
         avg_buy_price = balances.get("avg_buy_price", 0.0)
         current_price = indicators.get("current_price", 0.0)
         xrp_amount = balances.get("xrp", 0.0)
+        is_holding = xrp_amount * current_price > MIN_ORDER_VALUE
 
         # 🚨 글로벌 State 로드 (UnboundLocalError 방지)
         state = load_trading_state()
@@ -169,12 +173,19 @@ async def execute_trading_cycle(is_forced: bool = False):
         # 4. 규칙 엔진 의사결정 및 LLM Veto
         print("규칙 엔진 의사결정 진행 중...")
         
-        rule_res = rule_engine_decision(indicators)
+        rule_res = rule_engine_decision(indicators, is_holding)
         decision = rule_res.get("decision", "HOLD")
         reason = rule_res.get("reason", "")
-        
-        # Rule Engine이 BUY를 외치면 LLM에게 뉴스 악재(Veto) 확인
-        if decision == "BUY":
+
+        # 같은 마감 봉으로는 한 번만 진입/청산 (사이클 주기가 봉 주기보다 짧아도 중복 매매 방지)
+        candle_time = indicators.get("candle_time")
+        if decision in ("BUY", "SELL") and state.get("last_signal_candle") == candle_time:
+            print(f"이미 처리한 봉({candle_time})의 신호이므로 건너뜁니다.")
+            reason = f"[중복 신호 무시] {reason}"
+            decision = "HOLD"
+
+        # Rule Engine이 BUY를 외치면 LLM에게 뉴스 악재(Veto) 확인 (기본 비활성: 백테스트로 검증되지 않은 필터)
+        if decision == "BUY" and config.LLM_VETO_ENABLED:
             print("LLM Veto 시스템에 악재 뉴스 확인 중...")
             veto_res = query_ai_veto(indicators)
             if veto_res.get("veto", False):
@@ -185,100 +196,43 @@ async def execute_trading_cycle(is_forced: bool = False):
                 print("✅ LLM Veto 통과. 뉴스 악재 없음.")
                 reason = f"{reason} (LLM 검증 완료: {veto_res.get('reason', '')})"
         
-        # 4.5. 포지션 사이징 (리스크 기반 1% 룰 적용)
+        # 4.5. 포지션 사이징 (리스크 기반: 손절 시 가용 현금의 RISK_PER_TRADE_PCT% 손실)
         confidence = 1.0 # 룰 엔진은 100% 확신으로 간주
         percentage = 0.0
+        main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
         if decision == "BUY":
-            main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
-            xrp_val = balances.get("xrp", 0) * indicators.get("current_price", 0)
-            
-            if xrp_val > 5000:
-                print(f"⚠️ 이미 포지션 보유 중({xrp_val:,.0f} 원). 추가 매수(물타기/불타기)를 금지합니다.")
-                decision = "HOLD"
-                reason = f"[포지션 보유 중] 이미 매수한 상태이므로 추가 진입 차단. {reason}"
-                percentage = 0.0
-            else:
-                risk_tolerance = main_cash * 0.01 # 총 가용 현금의 1%를 최대 손실로 고정
-                
-                # 튜닝된 손절 비율 사용 (기본 1.5 -> 2.5로 넓힘)
-                optim_sl = state.get("optim_stop_loss", 2.5) 
-                atr_val = indicators.get("atr_14", current_price * 0.02)
-                stop_loss_pct = (optim_sl * atr_val) / current_price
-                
-                if stop_loss_pct > 0:
-                    target_krw = risk_tolerance / stop_loss_pct
-                else:
-                    target_krw = 0.0
-                    
-                # 가용 현금 내에서만 매수 (최대 100%)
-                target_krw = min(target_krw, main_cash)
-                percentage = (target_krw / main_cash * 100.0) if main_cash > 0 else 0.0
-                print(f"포지션 사이징: 투입금 {target_krw:,.0f} 원 (현금 비중 {percentage:.1f}%) / 손절폭 {stop_loss_pct*100:.2f}%")
-            
+            atr_val = indicators.get("atr_14", 0) or current_price * 0.01
+            stop_loss_pct = (config.ATR_STOP_MULT * atr_val) / current_price if current_price > 0 else 0
+            risk_tolerance = main_cash * config.RISK_PER_TRADE_PCT / 100.0
+            target_krw = min(risk_tolerance / stop_loss_pct, main_cash) if stop_loss_pct > 0 else 0.0
+            percentage = (target_krw / main_cash * 100.0) if main_cash > 0 else 0.0
+            print(f"포지션 사이징: 투입금 {target_krw:,.0f} {PRICE_UNIT} (현금 비중 {percentage:.1f}%) / 손절폭 {stop_loss_pct*100:.2f}%")
         elif decision == "SELL":
             percentage = 100.0
-        
-        # 🚨 리스크 관리: 킬스위치 및 쿨타임 로직
-        last_sl_time = state.get("last_stop_loss_time", 0.0)
-        kill_switch_until = state.get("kill_switch_until", 0.0)
-        current_time = time.time()
-        
-        if decision == "BUY":
-            if current_time < kill_switch_until:
-                print("🚨 킬스위치 작동 중: 연속 손절로 인해 매수가 차단되었습니다.")
-                decision = "HOLD"
-                reason = f"[킬스위치 발동] 연속 3회 손절로 인한 24시간 매수 금지 상태입니다. {reason}"
-                percentage = 0.0
-            elif current_time - last_sl_time < 6 * 3600:
-                print("⚠️ 손절매 이후 쿨타임(6시간)이 지나지 않아 매수를 보류합니다.")
-                decision = "HOLD"
-                reason = f"[쿨타임 적용] 최근 손절매 이후 6시간 안정화 대기 중. {reason}"
-                percentage = 0.0
 
-        # 🚨 잔고 부족 시 매수 방지 로직 추가
-        main_cash = balances.get("krw" if config.SELECTED_EXCHANGE == "UPBIT" else "usdt", 0)
-        
-        # 🚨 일일 손실 한도 (-4%) 방어망
+        # 🚨 일일 손실 한도 방어망 (신규 매수만 차단)
         today_str = datetime.now().strftime("%Y-%m-%d")
         total_asset = main_cash + (balances.get("xrp", 0) * current_price)
-        daily_start_cap = state.get(f"daily_start_{today_str}", total_asset)
-        
         if f"daily_start_{today_str}" not in state:
+            # 오래된 일자 키 정리
+            for k in [k for k in state if k.startswith("daily_start_")]:
+                state.pop(k)
             state[f"daily_start_{today_str}"] = total_asset
             save_trading_state(state)
-            daily_start_cap = total_asset
-            
+        daily_start_cap = state[f"daily_start_{today_str}"]
         daily_pnl_pct = ((total_asset - daily_start_cap) / daily_start_cap * 100) if daily_start_cap > 0 else 0.0
-        
-        if decision == "BUY" and daily_pnl_pct <= -4.0:
-            print(f"🛑 [일일 손실 한도 도달] 당일 손실이 {daily_pnl_pct:.2f}%로 -4%를 초과하여 매수를 전면 차단합니다.")
+
+        if decision == "BUY" and daily_pnl_pct <= -config.DAILY_LOSS_LIMIT_PCT:
+            print(f"🛑 [일일 손실 한도 도달] 당일 손실 {daily_pnl_pct:.2f}%로 매수를 차단합니다.")
             decision = "HOLD"
-            reason = f"[일일 손실 차단] 당일 누적 손실 {daily_pnl_pct:.2f}%로 -4% 한도 초과"
+            reason = f"[일일 손실 차단] 당일 누적 손실 {daily_pnl_pct:.2f}%로 -{config.DAILY_LOSS_LIMIT_PCT}% 한도 초과"
             percentage = 0.0
-            
-            # 일일 손실 한도 도달 시에도 튜닝 트리거
-            last_tuning = state.get("last_tuning_time", 0)
-            # 하루에 한 번만 실행되도록 제한 (너무 잦은 실행 방지)
-            if time.time() - last_tuning > 12 * 3600:
-                print("🛑 일일 손실 방어망 작동. Auto-Tuning을 시작합니다.")
-                from auto_optimizer import run_auto_optimization
-                asyncio.create_task(run_auto_optimization())
-        elif decision == "BUY" and main_cash < MIN_ORDER_VALUE:
-            print(f"⚠️ 잔고 부족({main_cash:,.0f} {PRICE_UNIT})으로 인해 매수 결정을 HOLD로 전환합니다.")
+        elif decision == "BUY" and main_cash * percentage / 100.0 < MIN_ORDER_VALUE:
+            print(f"⚠️ 주문 가능 금액 부족({main_cash:,.0f} {PRICE_UNIT})으로 인해 매수 결정을 HOLD로 전환합니다.")
             decision = "HOLD"
             reason = f"[잔고 부족으로 매수 취소] {reason}"
             percentage = 0.0
 
-        # 거시 지표 기반 필터링 보완: 비트코인 단기 급락 추세 시 매수 차단 및 보류
-        btc_change_rate = exchange_client.get_btc_change_rate()
-        if decision == "BUY" and btc_change_rate <= -1.5:
-            print(f"⚠️ [매수 차단] 비트코인 단기 급락 감지 (변동률: {btc_change_rate:.2f}%). 매수 결정을 보류하고 HOLD로 전환합니다.")
-            decision = "HOLD"
-            reason = f"[비트코인 급락으로 매수 차단] 비트코인 1시간 변동률 {btc_change_rate:.2f}%로 급락 경고 감지."
-            percentage = 0.0
-        elif decision == "BUY" and btc_change_rate > -1.5:
-            reason += f" (참조: 비트코인 변동률 {btc_change_rate:+.2f}%로 안정적인 마켓 상황 확인)"
-            
         # AI 리포트 DB 저장 (현재가 포함)
         save_ai_report(decision, confidence, percentage, reason, indicators, current_price)
         
@@ -304,24 +258,24 @@ async def execute_trading_cycle(is_forced: bool = False):
                 save_trade_log(decision, price, amount, total_krw, exec_reason)
                 
                 # 최고가 및 진입 정보 상태 관리 파일 업데이트
+                st = load_trading_state()
+                st["last_signal_candle"] = candle_time
                 if decision == "BUY":
-                    # 신규 진입 시 손절 기준이 되는 atr과 평단가 저장
-                    s = load_trading_state()
-                    s["highest_price_since_buy"] = price
-                    s["entry_price"] = price
-                    s["entry_atr"] = indicators.get("atr_14", price * 0.02)
-                    save_trading_state(s)
+                    # 신규 진입 시 손절 기준이 되는 atr과 실제 체결가 저장
+                    st["highest_price_since_buy"] = price
+                    st["entry_price"] = price
+                    st["entry_atr"] = indicators.get("atr_14", price * 0.01)
                 elif decision == "SELL":
-                    s = load_trading_state()
-                    s["highest_price_since_buy"] = 0.0
-                    s.pop("entry_price", None)
-                    s.pop("entry_atr", None)
-                    save_trading_state(s)
+                    st["highest_price_since_buy"] = 0.0
+                    st.pop("entry_price", None)
+                    st.pop("entry_atr", None)
+                save_trading_state(st)
                 
-                # 🛡️ 서버 다운 대비 예약 주문(Safety Net) 즉시 실행
-                safety_res = exchange_client.place_safety_orders(amount, price)
-                if safety_res.get("success"):
-                    print(f"🛡️ 거래소 기반 안전 예약 주문 완료 (서버 중단 대비)")
+                # 🛡️ 서버 다운 대비 예약 주문(Safety Net) 즉시 실행 (매수 직후에만)
+                if decision == "BUY":
+                    safety_res = exchange_client.place_safety_orders(amount, price)
+                    if safety_res.get("success"):
+                        print(f"🛡️ 거래소 기반 안전 예약 주문 완료 (서버 중단 대비)")
                     # send_telegram_message(f"🛡️ *[안전장치 가동]*\n거래소 서버에 직접 예약 주문을 등록했습니다. 이제 서버가 중단되어도 목표가 도달 시 자동으로 매도됩니다.")
                 
                 # 주문 체결 텔레그램 알림 (사용자 요청으로 생략)
@@ -385,38 +339,27 @@ async def trailing_stop_monitor():
             state = load_trading_state()
             balances = exchange_client.get_balances()
             xrp_bal = balances.get("xrp", 0)
+            current_price = exchange_client.get_current_price()
             
-            if xrp_bal > 0:
-                current_price = exchange_client.get_current_price()
+            # 최소 주문 금액 미만의 먼지 잔고는 미보유로 취급 (매도 불가 → 무한 매도 시도 방지)
+            if xrp_bal * current_price > MIN_ORDER_VALUE:
                 avg_buy_price = balances.get("avg_buy_price", 0)
                 highest_price = state.get("highest_price_since_buy", 0)
                 
                 entry_price = state.get("entry_price", avg_buy_price)
                 
-                # ATR 정보가 없으면 기본값(2%) 사용
-                entry_atr = state.get("entry_atr", current_price * 0.02)
+                # ATR 정보가 없으면 기본값(1시간봉 평균 수준 1%) 사용
+                entry_atr = state.get("entry_atr", current_price * 0.01)
                 
                 if current_price > highest_price:
                     highest_price = current_price
                     state["highest_price_since_buy"] = highest_price
                     save_trading_state(state)
                     
-                # 자가 튜닝된 파라미터 로드
-                ATR_TRAILING_START = state.get("optim_trailing_start", 1.5)
-                ATR_TRAILING_DROP = state.get("optim_trailing_drop", 0.75)
-                ATR_STOP_LOSS = state.get("optim_stop_loss", 1.5)
-                
-                # 손절 라인 및 트레일링 익절 라인 계산
-                trailing_sl_price = entry_price - (ATR_STOP_LOSS * entry_atr) # 기본 손절 라인
-                
-                # 1. 수익 잠금 (+3 ATR 도달 시 진입가 + 1 ATR로 상향)
-                ATR_PROFIT_LOCK = 3.0
-                ATR_PROFIT_LOCK_RAISE = 1.0
-                if highest_price >= entry_price + (ATR_PROFIT_LOCK * entry_atr):
-                    trailing_sl_price = entry_price + (ATR_PROFIT_LOCK_RAISE * entry_atr)
-                # 2. 트레일링 스탑 (+1.5 ATR 도달 시)
-                elif highest_price >= entry_price + (ATR_TRAILING_START * entry_atr):
-                    trailing_sl_price = highest_price - (ATR_TRAILING_DROP * entry_atr)
+                # 초기 손절선과 트레일링선 중 높은 쪽을 적용 (손절선은 절대 내려가지 않음)
+                initial_sl = entry_price - (config.ATR_STOP_MULT * entry_atr)
+                trailing_sl = highest_price - (config.ATR_TRAIL_MULT * entry_atr)
+                trailing_sl_price = max(initial_sl, trailing_sl)
                     
                 # 현재가가 기준선 아래로 떨어졌는지 확인
                 if current_price <= trailing_sl_price:
@@ -438,19 +381,8 @@ async def trailing_stop_monitor():
                         new_state.pop("entry_price", None)
                         new_state.pop("entry_atr", None)
                         
-                        if is_stop_loss:
-                            consecutive = new_state.get("consecutive_losses", 0) + 1
-                            new_state["consecutive_losses"] = consecutive
-                            new_state["last_stop_loss_time"] = time.time()
-                            
-                            # 🚨 킬스위치 도달 시 Auto-Tuning 발동
-                            if consecutive >= 3:
-                                new_state["kill_switch_until"] = time.time() + (24 * 3600)
-                                print("🚨 킬스위치 발동. Auto-Tuning을 시작합니다.")
-                                from auto_optimizer import run_auto_optimization
-                                asyncio.create_task(run_auto_optimization())
-                        else:
-                            new_state["consecutive_losses"] = 0
+                        # 손절 통계만 기록 (돌파 추세추종은 연속 손절이 정상 범위라 쿨타임/킬스위치를 두지 않음)
+                        new_state["consecutive_losses"] = new_state.get("consecutive_losses", 0) + 1 if is_stop_loss else 0
                             
                         save_trading_state(new_state)
                         
@@ -510,6 +442,8 @@ async def start_scheduler():
         
         if seconds_to_wait <= 0:
             seconds_to_wait = interval_minutes * 60
+        # 봉 마감 직후 거래소에 새 봉이 반영될 시간을 확보
+        seconds_to_wait += 5
             
         print(f"⏱️ 다음 분석 사이클까지 {seconds_to_wait}초 대기합니다. (약 {minutes_to_wait}분 후)")
         await asyncio.sleep(seconds_to_wait)

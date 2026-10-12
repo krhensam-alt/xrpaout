@@ -16,10 +16,10 @@ class UpbitClient:
                 # API 키 유효성 테스트 호출
                 self.upbit.get_balances()
             except Exception as e:
-                print(f"업비트 API 인증 실패 또는 오류, Mock 모드로 자동 전환합니다: {e}")
-                self.is_mock = True
-        else:
-            self.is_mock = True
+                # 실거래 설정인데 조용히 Mock으로 바뀌면 가짜 잔고로 운영되므로 기동을 중단함
+                raise RuntimeError(f"업비트 API 인증 실패 (MOCK_MODE=False): {e}")
+        elif not self.is_mock:
+            raise RuntimeError("MOCK_MODE=False 이지만 UPBIT_ACCESS_KEY/UPBIT_SECRET_KEY가 비어 있습니다.")
             
         # 가상 잔고 상태 (Mock 모드용)
         self.mock_krw = 100000.0
@@ -27,16 +27,21 @@ class UpbitClient:
         self.mock_avg_buy_price = 730.0
         self.last_price = 730.0
 
-    def get_ohlcv(self, interval="minute15", count=100) -> pd.DataFrame:
-        """캔들 데이터 조회 (단기 스윙을 위해 15분봉 기본 조회)"""
+    def get_ohlcv(self, interval=None, count=100) -> pd.DataFrame:
+        """캔들 데이터 조회 (마지막 행은 진행 중인 봉)"""
+        interval = interval or config.STRATEGY_INTERVAL
         try:
             df = pyupbit.get_ohlcv("KRW-XRP", interval=interval, count=count)
             if df is not None and not df.empty:
                 self.last_price = float(df['close'].iloc[-1])
                 return df
         except Exception as e:
-            print(f"퍼블릭 캔들 조회 실패, 가상 데이터를 생성합니다: {e}")
-            
+            print(f"퍼블릭 캔들 조회 실패: {e}")
+
+        # 실거래 모드에서는 가상 데이터로 매매하지 않도록 None 반환
+        if not self.is_mock:
+            return None
+
         # 퍼블릭 API 호출도 실패할 경우 완벽 동작을 위한 가상 캔들 데이터 생성
         now = datetime.datetime.now()
         dates = [now - datetime.timedelta(minutes=config.TRADING_INTERVAL_MINUTES * i) for i in range(count - 1, -1, -1)]
@@ -141,6 +146,25 @@ class UpbitClient:
             "is_mock": True
         }
 
+    def _get_fill(self, res, fallback_price: float, fallback_volume: float):
+        """시장가 주문의 실제 체결 평균가와 체결 수량 조회"""
+        import time
+        uuid = res.get("uuid") if isinstance(res, dict) else None
+        if not uuid:
+            return fallback_price, fallback_volume
+        for _ in range(5):
+            time.sleep(0.5)
+            try:
+                order = self.upbit.get_order(uuid)
+                trades = order.get("trades", []) if isinstance(order, dict) else []
+                volume = sum(float(t["volume"]) for t in trades)
+                funds = sum(float(t["funds"]) for t in trades)
+                if volume > 0 and order.get("state") in ("done", "cancel"):
+                    return funds / volume, volume
+            except Exception as e:
+                print(f"체결 내역 조회 실패: {e}")
+        return fallback_price, fallback_volume
+
     def execute_order(self, decision: str, percentage: float) -> dict:
         """주문 실행 (매수/매도)"""
         price = self.get_current_price()
@@ -172,7 +196,8 @@ class UpbitClient:
                     if res is None or "error" in res:
                         err_msg = res["error"]["message"] if res and "error" in res else "Unknown Error (None returned)"
                         return {"success": False, "reason": err_msg}
-                    return {"success": True, "result": res, "price": price, "amount": amount_to_buy, "total_krw": target_krw}
+                    fill_price, fill_volume = self._get_fill(res, price, amount_to_buy)
+                    return {"success": True, "result": res, "price": fill_price, "amount": fill_volume, "total_krw": fill_price * fill_volume}
                 except Exception as e:
                     return {"success": False, "reason": str(e)}
             else:
@@ -215,7 +240,8 @@ class UpbitClient:
                     if res is None or (isinstance(res, dict) and "error" in res):
                         err_msg = res["error"]["message"] if isinstance(res, dict) and "error" in res else "Unknown Error (None returned)"
                         return {"success": False, "reason": err_msg}
-                    return {"success": True, "result": res, "price": price, "amount": target_xrp, "total_krw": target_krw}
+                    fill_price, fill_volume = self._get_fill(res, price, target_xrp)
+                    return {"success": True, "result": res, "price": fill_price, "amount": fill_volume, "total_krw": fill_price * fill_volume}
                 except Exception as e:
                     return {"success": False, "reason": str(e)}
             else:

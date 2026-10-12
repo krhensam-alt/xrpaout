@@ -20,10 +20,9 @@ class BinanceClient:
                 # API 키 유효성 테스트 (계좌 정보 조회)
                 self.client.get_account()
             except Exception as e:
-                print(f"바이낸스 API 인증 실패 또는 오류, Mock 모드로 자동 전환합니다: {e}")
-                self.is_mock = True
-        else:
-            self.is_mock = True
+                raise RuntimeError(f"바이낸스 API 인증 실패 (MOCK_MODE=False): {e}")
+        elif not self.is_mock:
+            raise RuntimeError("MOCK_MODE=False 이지만 BINANCE_ACCESS_KEY/BINANCE_SECRET_KEY가 비어 있습니다.")
             
         # 가상 잔고 상태 (Mock 모드용) - 10만원 상당의 USDT/XRP
         self.mock_usdt = 75.0  # 약 10만원
@@ -31,10 +30,12 @@ class BinanceClient:
         self.mock_avg_buy_price = 0.5 # USDT 기준
         self.last_price = 0.5
 
-    def get_ohlcv(self, interval="15m", count=100) -> pd.DataFrame:
-        """캔들 데이터 조회 (단기 스윙을 위해 15분봉 기본 조회)"""
-        # Upbit "minute60" -> Binance "1h" 매핑
-        if interval == "minute60": interval = "1h"
+    def get_ohlcv(self, interval=None, count=100) -> pd.DataFrame:
+        """캔들 데이터 조회 (마지막 행은 진행 중인 봉)"""
+        interval = interval or config.STRATEGY_INTERVAL
+        # Upbit 인터벌 표기 -> Binance 표기 매핑
+        interval = {"minute15": "15m", "minute60": "1h", "minute240": "4h", "day": "1d"}.get(interval, interval)
+        count = min(count, 1000)
         
         try:
             klines = self.client.get_klines(symbol=self.symbol, interval=interval, limit=count)
@@ -51,9 +52,10 @@ class BinanceClient:
             self.last_price = float(df['close'].iloc[-1])
             return df[['open', 'high', 'low', 'close', 'volume']]
         except Exception as e:
-            if not self.is_mock:
-                print(f"바이낸스 캔들 조회 실패: {e}")
-            
+            print(f"바이낸스 캔들 조회 실패: {e}")
+        if not self.is_mock:
+            return None
+
         # 가상 데이터 생성 (실패 시)
         now = datetime.datetime.now()
         dates = [now - datetime.timedelta(hours=i) for i in range(count - 1, -1, -1)]

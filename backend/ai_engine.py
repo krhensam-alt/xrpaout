@@ -4,55 +4,36 @@ import re
 from config import config
 from exchange import PRICE_UNIT, CURRENCY_UNIT
 
-def rule_engine_decision(indicators: dict) -> dict:
-    """하드코딩된 기술적 지표 규칙 엔진 (진입 결정 담당)"""
-    rsi = indicators.get("rsi_14", 50)
-    macd = indicators.get("macd", {})
-    bb = indicators.get("bollinger", {})
-    ma = indicators.get("ma", {})
-    
-    current_price = indicators.get("current_price", 0)
-    ma5, ma20, ma60 = ma.get("ma5", current_price), ma.get("ma20", current_price), ma.get("ma60", current_price)
-    macd_hist, macd_val, macd_sig = macd.get("histogram", 0), macd.get("macd", 0), macd.get("signal", 0)
-    macd_golden = macd_val > macd_sig
-    
-    ob_info = indicators.get("orderbook_imbalance", {})
-    strong_buy_wall = ob_info.get("strong_buy_wall", False)
-    
-    vol_info = indicators.get("volume_trend", {})
-    is_vol_spike = vol_info.get("is_volume_spike", False)
-    
-    if ma5 > ma20 > ma60 and macd_hist > 0:
-        regime = "AGGRESSIVE"
-    elif ma5 < ma20 < ma60 and macd_hist < 0:
-        regime = "DEFENSIVE"
-    else:
-        regime = "BALANCED"
+def rule_engine_decision(indicators: dict, is_holding: bool = False) -> dict:
+    """돌파 추세추종 규칙 엔진 (마감된 봉 기준)
 
-    # 규칙 1: 과매도 + 모멘텀 회복 (역추세 매수)
-    if rsi < 40 and macd_hist > 0:
-        return {"decision": "BUY", "reason": f"RSI {rsi:.1f} 반등 시그널 (단기 낙폭 과대)"}
-        
-    # 규칙 2: 강세장 추세 추종
-    elif regime == "AGGRESSIVE" and macd_golden and rsi < 65:
-        return {"decision": "BUY", "reason": "강세장 정배열 및 MACD 골든크로스 (추세 추종)"}
-        
-    # 허매수 덫 회피 (매도 기능 삭제, 신규 진입 차단만 함)
-    elif strong_buy_wall and not is_vol_spike and rsi > 65:
-        return {"decision": "HOLD", "reason": "허매수(Spoofing) 덫 징후 감지. 신규 진입 차단."}
-        
-    # 혼조세에서는 기본적으로 잦은 매매 금지 (Vhipsaw 방어)
-    elif regime == "BALANCED" and not (rsi < 40 and macd_hist > macd_sig):
-        return {"decision": "HOLD", "reason": "혼조세(BALANCED) 진입 차단 (휩쏘 방어)"}
-        
-    return {"decision": "HOLD", "reason": "명확한 진입 시그널 없음"}
+    - 진입: 종가가 직전 N봉 최고가를 돌파 + 종가가 추세 EMA 위
+    - 청산: 종가가 추세 EMA 아래로 마감 (손절/트레일링은 trailing_stop_monitor 담당)
+    """
+    close = indicators.get("close", 0)
+    ema = indicators.get("ema_trend", 0)
+    breakout_high = indicators.get("breakout_high", float("inf"))
+
+    if close <= 0 or ema <= 0:
+        return {"decision": "HOLD", "reason": "지표 데이터 부족"}
+
+    if is_holding:
+        if close < ema:
+            return {"decision": "SELL", "reason": f"추세 이탈: 종가 {close:,.2f} < EMA{config.TREND_EMA_PERIOD} {ema:,.2f}"}
+        return {"decision": "HOLD", "reason": f"추세 유지 중 (종가 {close:,.2f} / EMA {ema:,.2f})"}
+
+    if close > breakout_high and close > ema:
+        return {"decision": "BUY", "reason": f"{config.BREAKOUT_PERIOD}봉 고가({breakout_high:,.2f}) 돌파 + EMA{config.TREND_EMA_PERIOD} 위 상승 추세"}
+    if close <= ema:
+        return {"decision": "HOLD", "reason": f"하락 추세 구간 (종가 {close:,.2f} < EMA {ema:,.2f}) 진입 금지"}
+    return {"decision": "HOLD", "reason": f"돌파 대기 (기준 고가 {breakout_high:,.2f})"}
 
 def query_ai_veto(indicators: dict) -> dict:
     """LLM 거부권(Veto) 시스템: 규칙 엔진이 BUY를 외쳤을 때 뉴스/센티먼트 악재가 있는지 확인하여 차단함"""
     url = f"{config.LM_STUDIO_BASE_URL.rstrip('/')}/chat/completions"
-    
+
     news_lines = "\n".join([f"- {news}" for news in indicators.get("recent_news", ["No recent news available"])])
-    
+
     system_prompt = """You are a Veto (Rejection) Engine for a quantitative trading bot.
 The algorithmic rule engine has ALREADY generated a 'BUY' signal based on technical charts.
 Your ONLY job is to read the latest news headlines and VETO (reject) the trade IF there is a critical FUD (Fear, Uncertainty, Doubt) or major bad news (e.g., SEC lawsuits, hacks, massive sell-offs).
@@ -87,16 +68,16 @@ Evaluate the news. Should we VETO the BUY signal? (true if bad news, false if ok
             data = response.json()
             content = data["choices"][0]["message"]["content"].strip()
             content = re.sub(r'```json\s*|\s*```', '', content)
-            
+
             json_match = re.search(r'(\{.*\})', content, re.DOTALL)
             if json_match: content = json_match.group(1)
-            
+
             parsed = json.loads(content)
             veto = bool(parsed.get("veto", False))
             reason = str(parsed.get("reason", "뉴스 분석 완료"))
             return {"veto": veto, "reason": reason}
     except Exception as e:
         print(f"LLM Veto 시스템 오류 (진행 허용): {e}")
-        
+
     # 오류 시 기본적으로 Veto 하지 않음 (Rule 엔진을 우선시)
     return {"veto": False, "reason": "LLM Veto 시스템 응답 없음 (진입 허용)"}

@@ -100,8 +100,17 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
     atr = true_range.ewm(alpha=1/period, adjust=False).mean()
     return float(atr.iloc[-1])
 
-def get_all_indicators(df: pd.DataFrame) -> dict:
-    """모든 기술적 지표를 통합하여 반환"""
+def calculate_ema(df: pd.DataFrame, period: int) -> float:
+    return float(df['close'].ewm(span=period, adjust=False).mean().iloc[-1])
+
+def calculate_breakout_high(df: pd.DataFrame, period: int) -> float:
+    """마지막 봉을 제외한 직전 N봉의 최고가 (돌파 기준선)"""
+    if len(df) < period + 1:
+        return float('inf')
+    return float(df['high'].iloc[-period - 1:-1].max())
+
+def get_all_indicators(df: pd.DataFrame, breakout_period: int = 55, ema_period: int = 200) -> dict:
+    """모든 기술적 지표를 통합하여 반환. df는 마감된 캔들만 포함해야 함 (진행 중인 봉 제외)"""
     if df.empty or 'close' not in df:
         return {}
 
@@ -112,5 +121,9 @@ def get_all_indicators(df: pd.DataFrame) -> dict:
         "ma": calculate_ma(df),
         "volume_trend": calculate_volume_trend(df),
         "atr_14": calculate_atr(df),
+        "ema_trend": calculate_ema(df, ema_period),
+        "breakout_high": calculate_breakout_high(df, breakout_period),
+        "close": float(df['close'].iloc[-1]),
+        "candle_time": str(df.index[-1]),
         "current_price": float(df['close'].iloc[-1])
     }
