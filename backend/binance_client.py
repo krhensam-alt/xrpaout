@@ -81,8 +81,9 @@ class BinanceClient:
             ticker = self.client.get_symbol_ticker(symbol=self.symbol)
             self.last_price = float(ticker['price'])
             return self.last_price
-        except Exception:
-            pass
+        except Exception as e:
+            if not self.is_mock:
+                raise RuntimeError(f"바이낸스 현재가 조회 실패: {e}")
         self.last_price += self.last_price * np.random.uniform(-0.002, 0.002)
         return self.last_price
 
@@ -137,8 +138,8 @@ class BinanceClient:
                     "is_mock": False
                 }
             except Exception as e:
-                print(f"바이낸스 잔고 조회 오류: {e}")
-                
+                raise RuntimeError(f"바이낸스 잔고 조회 실패: {e}")
+
         return {
             "krw": self.mock_usdt * 1350,
             "usdt": self.mock_usdt,

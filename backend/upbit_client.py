@@ -69,8 +69,11 @@ class UpbitClient:
             if price:
                 self.last_price = float(price)
                 return self.last_price
-        except Exception:
-            pass
+        except Exception as e:
+            if not self.is_mock:
+                raise RuntimeError(f"업비트 현재가 조회 실패: {e}")
+        if not self.is_mock:
+            raise RuntimeError("업비트 현재가 조회 실패: 빈 응답")
         self.last_price += self.last_price * np.random.uniform(-0.002, 0.002)
         return self.last_price
 
@@ -135,8 +138,9 @@ class UpbitClient:
                     "is_mock": False
                 }
             except Exception as e:
-                print(f"잔고 상세 조회 오류, 가상 잔고를 반환합니다: {e}")
-                
+                # 실거래 모드에서는 가상 잔고로 대체하지 않음 (손절 감시/손실 한도 계산 오작동 방지)
+                raise RuntimeError(f"업비트 잔고 조회 실패: {e}")
+
         return {
             "krw": self.mock_krw,
             "xrp": self.mock_xrp,

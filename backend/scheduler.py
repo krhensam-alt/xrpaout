@@ -1,7 +1,7 @@
 import asyncio
 import time
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from config import config
 from exchange import exchange_client, CURRENCY_UNIT, PRICE_UNIT, MIN_ORDER_VALUE
 from indicators import get_all_indicators
@@ -32,6 +32,24 @@ def save_trading_state(new_state: dict):
             json.dump(new_state, f, indent=4)
     except Exception as e:
         print(f"상태 파일 저장 오류: {e}")
+
+def _interval_minutes(interval: str) -> int:
+    if interval.startswith("minute"):
+        return int(interval[len("minute"):])
+    return {"day": 1440, "week": 10080}.get(interval, 60)
+
+def drop_unclosed_candle(df):
+    """마지막 봉이 아직 진행 중일 때만 제외.
+    정각 직후 체결이 없으면 거래소가 새 봉을 아직 만들지 않아 마지막 봉이 이미 마감된 봉일 수 있음."""
+    # 업비트 캔들 시각은 KST, 바이낸스는 UTC 기준 (서버 타임존과 무관하게 비교)
+    tz_hours = 0 if config.SELECTED_EXCHANGE == "BINANCE" else 9
+    now = datetime.now(timezone(timedelta(hours=tz_hours))).replace(tzinfo=None)
+    last_open = df.index[-1]
+    if hasattr(last_open, "tzinfo") and last_open.tzinfo is not None:
+        last_open = last_open.tz_convert(timezone(timedelta(hours=tz_hours))).tz_localize(None)
+    if last_open + timedelta(minutes=_interval_minutes(config.STRATEGY_INTERVAL)) > now:
+        return df.iloc[:-1]
+    return df
 
 # 브로드캐스팅용 콜백 함수 목록 관리
 broadcast_callbacks = []
@@ -99,7 +117,7 @@ async def execute_trading_cycle(is_forced: bool = False):
         if df is None or len(df) < config.TREND_EMA_PERIOD + 2:
             print("캔들 데이터 수집 실패로 이번 사이클을 건너뜁니다.")
             return
-        df = df.iloc[:-1]
+        df = drop_unclosed_candle(df)
 
         # 2. 지표 계산
         print("지표 계산 중...")

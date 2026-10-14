@@ -57,8 +57,12 @@ async def live_ticker_loop():
     while True:
         await asyncio.sleep(2.0)
         if websocket_clients:
-            price = exchange_client.get_current_price()
-            balances = exchange_client.get_balances()
+            try:
+                price = exchange_client.get_current_price()
+                balances = exchange_client.get_balances()
+            except Exception as e:
+                print(f"라이브 시세 조회 실패: {e}")
+                continue
             await broadcast_ws_message("ticker", {"price": price, "balances": balances})
 
 app = FastAPI(title="XRP AI Trading Monitor API", lifespan=lifespan)
