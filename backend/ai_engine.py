@@ -62,8 +62,12 @@ Evaluate the news. Should we VETO the BUY signal? (true if bad news, false if ok
         "stream": False
     }
 
+    headers = {"Content-Type": "application/json"}
+    if getattr(config, "LM_STUDIO_API_KEY", ""):
+        headers["Authorization"] = f"Bearer {config.LM_STUDIO_API_KEY}"
+
     try:
-        response = requests.post(url, json=payload, timeout=30.0)
+        response = requests.post(url, json=payload, headers=headers, timeout=30.0)
         if response.status_code == 200:
             data = response.json()
             content = data["choices"][0]["message"]["content"].strip()

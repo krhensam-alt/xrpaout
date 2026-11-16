@@ -14,8 +14,10 @@ kind: ConfigMap
 metadata:
   name: xrpaout-config
 data:
-  LM_STUDIO_BASE_URL: "http://192.168.0.37:11434/v1"
-  LM_STUDIO_MODEL: "qwen3.8:27b"
+  LM_STUDIO_BASE_URL: "http://192.168.0.37:8000/v1"
+  LM_STUDIO_MODEL: "qwen2.5-coder-32b-vllm"
+  LM_STUDIO_API_KEY: "vllm-local-key"
+  LLM_VETO_ENABLED: "True"
   SELECTED_EXCHANGE: "UPBIT"
   TRADING_INTERVAL_MINUTES: "60"
   MAX_INVESTMENT_KRW: "100000"

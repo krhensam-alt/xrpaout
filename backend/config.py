@@ -12,8 +12,9 @@ class Config:
     BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY", "")
     SELECTED_EXCHANGE = os.getenv("SELECTED_EXCHANGE", "UPBIT").upper()
     
-    LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://192.168.0.37:11434/v1")
-    LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "qwen3.8:27b")
+    LM_STUDIO_BASE_URL = os.getenv("LM_STUDIO_BASE_URL", "http://192.168.0.37:8000/v1")
+    LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "qwen2.5-coder-32b-vllm")
+    LM_STUDIO_API_KEY = os.getenv("LM_STUDIO_API_KEY", "vllm-local-key")
     TRADING_INTERVAL_MINUTES = int(os.getenv("TRADING_INTERVAL_MINUTES", "60"))
     MAX_INVESTMENT_KRW = float(os.getenv("MAX_INVESTMENT_KRW", "100000"))
     
@@ -25,7 +26,7 @@ class Config:
     ATR_TRAIL_MULT = float(os.getenv("ATR_TRAIL_MULT", "4.0"))       # 트레일링: 보유 중 최고가 - N*ATR
     RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "2.0"))  # 1회 손절 시 최대 손실 (가용 현금 대비 %)
     DAILY_LOSS_LIMIT_PCT = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "4.0"))
-    LLM_VETO_ENABLED = os.getenv("LLM_VETO_ENABLED", "False").lower() in ("true", "1", "yes", "t")
+    LLM_VETO_ENABLED = os.getenv("LLM_VETO_ENABLED", "True").lower() in ("true", "1", "yes", "t")
 
     # 텔레그램 설정
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
