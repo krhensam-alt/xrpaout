@@ -28,7 +28,7 @@ class Config:
     ATR_BREAKEVEN_OFFSET = float(os.getenv("ATR_BREAKEVEN_OFFSET", "0.3"))    # 본절 잠금 손절선: 진입가 + N*ATR (수수료 보전)
     RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "2.0"))  # 1회 손절 시 최대 손실 (가용 현금 대비 %)
     DAILY_LOSS_LIMIT_PCT = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "4.0"))
-    LLM_VETO_ENABLED = os.getenv("LLM_VETO_ENABLED", "True").lower() in ("true", "1", "yes", "t")
+    LLM_VETO_ENABLED = os.getenv("LLM_VETO_ENABLED", "False").lower() in ("true", "1", "yes", "t")
 
     # 텔레그램 설정
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()

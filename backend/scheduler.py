@@ -202,17 +202,24 @@ async def execute_trading_cycle(is_forced: bool = False):
             reason = f"[중복 신호 무시] {reason}"
             decision = "HOLD"
 
-        # Rule Engine이 BUY를 외치면 LLM에게 뉴스 악재(Veto) 확인 (기본 비활성: 백테스트로 검증되지 않은 필터)
-        if decision == "BUY" and config.LLM_VETO_ENABLED:
+        # Rule Engine이 BUY를 외치면 LLM에게 뉴스 악재(Veto) 확인
+        # LLM_VETO_ENABLED=False(기본값)일 때는 매수를 차단하지 않고 판단/뉴스만 DB에 기록(Shadow Mode)
+        if decision == "BUY":
             print("LLM Veto 시스템에 악재 뉴스 확인 중...")
             veto_res = query_ai_veto(indicators)
-            if veto_res.get("veto", False):
-                print(f"🛑 LLM Veto 발동! 매수 기각: {veto_res.get('reason', '')}")
+            indicators["llm_veto"] = veto_res
+            is_veto = veto_res.get("veto", False)
+            veto_reason = veto_res.get("reason", "")
+            if is_veto and config.LLM_VETO_ENABLED:
+                print(f"🛑 LLM Veto 발동! 매수 기각: {veto_reason}")
                 decision = "HOLD"
-                reason = f"규칙 엔진 매수(BUY) -> LLM 거부권 행사(Veto): {veto_res.get('reason', '')}"
+                reason = f"규칙 엔진 매수(BUY) -> LLM 거부권 행사(Veto): {veto_reason}"
+            elif is_veto:
+                print(f"📝 [LLM Veto 기록 모드] 거부 의견 기록 후 매수 진행: {veto_reason}")
+                reason = f"{reason} [LLM Veto 의견(미차단): 거부 - {veto_reason}]"
             else:
                 print("✅ LLM Veto 통과. 뉴스 악재 없음.")
-                reason = f"{reason} (LLM 검증 완료: {veto_res.get('reason', '')})"
+                reason = f"{reason} [LLM Veto 의견: 통과 - {veto_reason}]"
         
         # 4.5. 포지션 사이징 (리스크 기반: 손절 시 가용 현금의 RISK_PER_TRADE_PCT% 손실)
         confidence = 1.0 # 룰 엔진은 100% 확신으로 간주
