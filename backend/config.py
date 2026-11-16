@@ -24,6 +24,8 @@ class Config:
     TREND_EMA_PERIOD = int(os.getenv("TREND_EMA_PERIOD", "200"))     # 종가가 EMA 위일 때만 진입, 아래로 마감하면 청산
     ATR_STOP_MULT = float(os.getenv("ATR_STOP_MULT", "3.0"))         # 초기 손절: 진입가 - N*ATR
     ATR_TRAIL_MULT = float(os.getenv("ATR_TRAIL_MULT", "4.0"))       # 트레일링: 보유 중 최고가 - N*ATR
+    ATR_BREAKEVEN_TRIGGER = float(os.getenv("ATR_BREAKEVEN_TRIGGER", "2.0"))  # 최고가가 진입가 + N*ATR 도달 시 본절 잠금 작동
+    ATR_BREAKEVEN_OFFSET = float(os.getenv("ATR_BREAKEVEN_OFFSET", "0.3"))    # 본절 잠금 손절선: 진입가 + N*ATR (수수료 보전)
     RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "2.0"))  # 1회 손절 시 최대 손실 (가용 현금 대비 %)
     DAILY_LOSS_LIMIT_PCT = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "4.0"))
     LLM_VETO_ENABLED = os.getenv("LLM_VETO_ENABLED", "True").lower() in ("true", "1", "yes", "t")

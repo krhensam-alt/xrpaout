@@ -44,6 +44,8 @@ def simulate(df: pd.DataFrame) -> dict:
     for i in range(config.TREND_EMA_PERIOD, len(df)):
         if qty > 0:
             stop = max(entry - config.ATR_STOP_MULT * entry_atr, highest - config.ATR_TRAIL_MULT * entry_atr)
+            if config.ATR_BREAKEVEN_TRIGGER > 0 and highest >= entry + config.ATR_BREAKEVEN_TRIGGER * entry_atr:
+                stop = max(stop, entry + config.ATR_BREAKEVEN_OFFSET * entry_atr)
             if h[i] >= entry * (1 + SAFETY_TP) and o[i] < entry * (1 + SAFETY_TP):
                 close_position(entry * (1 + SAFETY_TP))
             elif l[i] <= stop:

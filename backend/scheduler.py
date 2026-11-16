@@ -378,6 +378,9 @@ async def trailing_stop_monitor():
                 initial_sl = entry_price - (config.ATR_STOP_MULT * entry_atr)
                 trailing_sl = highest_price - (config.ATR_TRAIL_MULT * entry_atr)
                 trailing_sl_price = max(initial_sl, trailing_sl)
+                if config.ATR_BREAKEVEN_TRIGGER > 0 and highest_price >= entry_price + (config.ATR_BREAKEVEN_TRIGGER * entry_atr):
+                    breakeven_sl = entry_price + (config.ATR_BREAKEVEN_OFFSET * entry_atr)
+                    trailing_sl_price = max(trailing_sl_price, breakeven_sl)
                     
                 # 현재가가 기준선 아래로 떨어졌는지 확인
                 if current_price <= trailing_sl_price:
